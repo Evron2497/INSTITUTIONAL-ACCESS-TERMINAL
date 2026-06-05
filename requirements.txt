@@ -6,4 +6,5 @@ numpy
 pandas
 requests
 plotly
-MetaTrader5
+yfinance
+streamlit-autorefresh
