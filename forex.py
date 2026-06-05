@@ -1,484 +1,3 @@
-# import os
-# from datetime import datetime, timezone
-# import time
-# import json
-# import numpy as np
-# import pandas as pd
-# import requests
-# import streamlit as st
-# import streamlit.components.v1 as components
-# import plotly.graph_objects as go
-# import MetaTrader5 as mt5
-
-# # =====================================================
-# # PAGE CONFIG
-# # =====================================================
-# st.set_page_config(page_title="PRO FORWARD ALGO TERMINAL", page_icon="🏦", layout="wide")
-
-# # =====================================================
-# # LOGIN SYSTEM
-# # =====================================================
-# USERNAME = st.secrets.get("USERNAME", "")
-# PASSWORD = st.secrets.get("PASSWORD", "")
-
-# if "logged_in" not in st.session_state:
-#     st.session_state.logged_in = False
-
-# if "shared_prediction" not in st.session_state:
-#     st.session_state.shared_prediction = {
-#         "signal": "NEUTRAL", "confidence": 0, "entry": 0, "tp": 0, "sl": 0,
-#         "pips": 0, "rsi": 50, "structure": "INITIALIZING", "buy_score": 0, "sell_score": 0,
-#         "session": "UNKNOWN", "timestamp": "", "recent_high": 0, "recent_low": 0
-#     }
-
-# def login():
-#     st.title("🏦 Institutional Access Terminal")
-#     u = st.text_input("Username")
-#     p = st.text_input("Password", type="password")
-#     if st.button("Login"):
-#         if u == USERNAME and p == PASSWORD:
-#             st.session_state.logged_in = True
-#             st.rerun()
-#         else:
-#             st.error("Invalid credentials")
-
-# if not st.session_state.logged_in:
-#     login()
-#     st.stop()
-
-# # =====================================================
-# # MT5 INITIALIZATION — Connection Guard
-# # =====================================================
-# MT5_LOGIN    = int(st.secrets["MT5_LOGIN"])
-# MT5_PASSWORD = st.secrets["MT5_PASSWORD"]
-# MT5_SERVER   = st.secrets["MT5_SERVER"]
-
-# if "mt5_connected" not in st.session_state:
-#     st.session_state.mt5_connected = False
-
-# if not st.session_state.mt5_connected:
-#     if not mt5.initialize():
-#         st.error("MT5 initialization failed. Verify terminal paths or administrative permissions.")
-#         st.stop()
-#     if not mt5.login(MT5_LOGIN, MT5_PASSWORD, MT5_SERVER):
-#         st.error("MT5 authentication rejected. Check login keys or broker server strings.")
-#         mt5.shutdown()
-#         st.stop()
-#     st.session_state.mt5_connected = True
-
-# st.sidebar.success("✅ MT5 Mainframe Connected")
-
-# # =====================================================
-# # TELEGRAM DISPATCH PIPELINE
-# # =====================================================
-# BOT_TOKEN = st.secrets.get("BOT_TOKEN", "")
-# CHAT_IDS  = st.secrets.get("CHAT_IDS", [])
-
-# def send_telegram(message: str):
-#     if not BOT_TOKEN or not CHAT_IDS:
-#         return False, "Telegram vectors unconfigured."
-#     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-#     errors = []
-#     for chat_id in CHAT_IDS:
-#         try:
-#             r = requests.post(url, data={"chat_id": chat_id, "text": message, "parse_mode": "HTML"}, timeout=10)
-#             if r.status_code != 200:
-#                 errors.append(f"Chat {chat_id}: {r.text}")
-#         except Exception as e:
-#             errors.append(str(e))
-#     return (len(errors) == 0), "; ".join(errors)
-
-# # =====================================================
-# # CORE CONFIG & METATRADER DATA INGESTION
-# # =====================================================
-# pairs = [
-#     "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD",
-#     "AUDUSD", "NZDUSD", "EURGBP", "EURJPY", "GBPJPY",
-#     "XAUUSD", "BTCUSD"
-# ]
-
-# selected_pair = st.sidebar.selectbox("Select Core Vector Pair", pairs)
-
-# @st.cache_data(ttl=3)
-# def get_data(symbol, timeframe=mt5.TIMEFRAME_M15, bars=300):
-#     rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, bars)
-#     if rates is None or len(rates) == 0:
-#         return pd.DataFrame()
-#     df = pd.DataFrame(rates)
-#     df["time"] = pd.to_datetime(df["time"], unit="s")
-#     df.rename(columns={
-#         "open": "Open", "high": "High", "low": "Low",
-#         "close": "Close", "tick_volume": "Volume"
-#     }, inplace=True)
-#     return df
-
-# # =====================================================
-# # TECHNICAL INDICATORS & ALGORITHMIC FUNCTIONS
-# # =====================================================
-# def calculate_swing_pivots(df: pd.DataFrame, left_bars: int = 5, right_bars: int = 5) -> pd.DataFrame:
-#     df = df.copy().reset_index(drop=True)
-#     swing_high = np.full(len(df), np.nan)
-#     swing_low  = np.full(len(df), np.nan)
-
-#     for i in range(left_bars, len(df) - right_bars):
-#         window_h = df["High"].iloc[i - left_bars: i + right_bars + 1]
-#         window_l = df["Low"].iloc[i - left_bars: i + right_bars + 1]
-#         if df["High"].iloc[i] == window_h.max():
-#             swing_high[i] = df["High"].iloc[i]
-#         if df["Low"].iloc[i] == window_l.min():
-#             swing_low[i] = df["Low"].iloc[i]
-
-#     df["Swing_High"] = swing_high
-#     df["Swing_Low"]  = swing_low
-#     return df
-
-# def calculate_atr(df, period=14):
-#     if len(df) < period:
-#         return 0.001
-#     tr = np.maximum(
-#         df["High"] - df["Low"],
-#         np.maximum(
-#             abs(df["High"] - df["Close"].shift()),
-#             abs(df["Low"]  - df["Close"].shift())
-#         )
-#     )
-#     atr = tr.rolling(period).mean().iloc[-1]
-#     return atr if not np.isnan(atr) else 0.001
-
-# def rsi(df, period=14):
-#     if len(df) < period:
-#         return 50.0
-#     delta = df["Close"].diff()
-#     gain  = delta.clip(lower=0).rolling(period).mean()
-#     loss  = (-delta.clip(upper=0)).rolling(period).mean()
-#     last_gain = gain.iloc[-1]
-#     last_loss = loss.iloc[-1]
-#     if last_loss == 0 and last_gain == 0: return 50.0
-#     if last_loss == 0: return 100.0
-#     rs = last_gain / last_loss
-#     return round(100 - (100 / (1 + rs)), 2)
-
-# def trading_session():
-#     hour = datetime.now(timezone.utc).hour
-#     if 0 <= hour < 7: return "ASIAN (ACCUMULATION)"
-#     elif 7 <= hour < 13: return "LONDON (MANIPULATION)"
-#     elif 13 <= hour < 21: return "NEW YORK (DISTRIBUTION)"
-#     return "CLOSED"
-
-# def calculate_pips(entry, tp, pair):
-#     pip_value = 0.01 if "JPY" in pair.upper() else 0.0001
-#     return round(abs(tp - entry) / pip_value, 1)
-
-# def neutral_result():
-#     return {
-#         "signal": "NEUTRAL", "confidence": 0, "entry": 0, "tp": 0, "sl": 0,
-#         "pips": 0, "rsi": 50, "structure": "INSUFFICIENT HISTORICAL DATA", "buy_score": 0,
-#         "sell_score": 0, "session": trading_session(), "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-#         "recent_high": 0, "recent_low": 0
-#     }
-
-# # =====================================================
-# # ADVANCED INSTITUTIONAL SMC ENGINE
-# # =====================================================
-# def institutional_engine(df, pair):
-#     if df is None or df.empty or len(df) < 50:
-#         return neutral_result()
-
-#     pip_multiplier = 0.01 if "JPY" in pair.upper() else 0.0001
-
-#     # 1. TIME ALIGNMENT & KILLZONES
-#     current_time_utc = datetime.now(timezone.utc)
-#     float_time       = current_time_utc.hour + (current_time_utc.minute / 60.0)
-#     is_active_killzone = (6.0 <= float_time <= 10.0) or (12.0 <= float_time <= 16.0)
-
-#     # 2. ATR COMPUTATION
-#     atr_val = calculate_atr(df)
-
-#     # 3. HIGH-TIMEFRAME (HTF) TREND FILTER (M30 Structural Control)
-#     df_m30   = get_data(pair, timeframe=mt5.TIMEFRAME_M30, bars=100)
-#     htf_bias = "NEUTRAL"
-#     if df_m30 is not None and not df_m30.empty and len(df_m30) >= 30:
-#         m30_ema  = df_m30["Close"].ewm(span=30).mean().iloc[-1]
-#         htf_bias = "BULLISH" if df_m30["Close"].iloc[-1] > m30_ema else "BEARISH"
-
-#     # 4. SWING PIVOT LIQUIDITY ANALYSIS
-#     df          = calculate_swing_pivots(df, left_bars=5, right_bars=5)
-#     valid_highs = df["Swing_High"].dropna()
-#     valid_lows  = df["Swing_Low"].dropna()
-#     recent_high = float(valid_highs.iloc[-1]) if not valid_highs.empty else float(df["High"].max())
-#     recent_low  = float(valid_lows.iloc[-1])  if not valid_lows.empty  else float(df["Low"].min())
-
-#     # 5. PREMIUM VS DISCOUNT DISTRIBUTION MODEL
-#     current_range  = recent_high - recent_low
-#     price          = float(df["Close"].iloc[-1])
-#     midpoint       = recent_low + (current_range * 0.50)
-#     is_in_discount = price < midpoint
-#     is_in_premium  = price > midpoint
-
-#     # 6. INSTANTANEOUS LIQUIDITY SWEEP DETECTORS (Using Closed Candles to prevent lagging repaints)
-#     sweep_buy  = False
-#     sweep_sell = False
-#     lookback   = min(6, len(df) - 1)
-#     for idx in range(-lookback, -1):
-#         if df["Low"].iloc[idx] < recent_low and df["Close"].iloc[idx] > recent_low:
-#             sweep_buy = True
-#         if df["High"].iloc[idx] > recent_high and df["Close"].iloc[idx] < recent_high:
-#             sweep_sell = True
-
-#     # 7. MARKET STRUCTURE SHIFT (MSS) VALIDATION
-#     last_body   = abs(df["Close"].iloc[-2] - df["Open"].iloc[-2])
-#     avg_body    = abs(df["Close"] - df["Open"]).iloc[-22:-2].mean()
-#     mss_bullish = df["Close"].iloc[-2] > recent_high and last_body > avg_body
-#     mss_bearish = df["Close"].iloc[-2] < recent_low and last_body > avg_body
-
-#     # 8. REFINED CLOSED-CANDLE FAIR VALUE GAPS (FVG)
-#     # Evaluated strictly over historic data points to guarantee zero execution time drift
-#     fvg_buy  = df["Low"].iloc[-2] > df["High"].iloc[-4]
-#     fvg_sell = df["High"].iloc[-2] < df["Low"].iloc[-4]
-
-#     # 9. COMPREHENSIVE VECTOR WEIGHT SCORING
-#     buy_score, sell_score = 0, 0
-
-#     if htf_bias == "BULLISH": buy_score  += 35
-#     if htf_bias == "BEARISH": sell_score += 35
-#     if sweep_buy:             buy_score  += 25
-#     if sweep_sell:            sell_score += 25
-#     if mss_bullish:           buy_score  += 25
-#     if mss_bearish:           sell_score += 25
-#     if fvg_buy:               buy_score  += 15
-#     if fvg_sell:              sell_score += 15
-
-#     # Premium / Discount Logic: Structural Gatekeeper
-#     if not is_in_discount: buy_score = int(buy_score * 0.25)
-#     if not is_in_premium:  sell_score = int(sell_score * 0.25)
-
-#     # 10. SYSTEM SIGNAL GENERATION
-#     signal = "NEUTRAL"
-#     confidence = max(buy_score, sell_score)
-
-#     if buy_score >= 75: signal = "STRONG BUY (A+ Setup)"
-#     elif buy_score >= 55: signal = "BUY"
-    
-#     if sell_score >= 75: signal = "STRONG SELL (A+ Setup)"
-#     elif sell_score >= 55 and "BUY" not in signal: signal = "SELL"
-
-#     # 11. QUANTITATIVE TRADE MANAGEMENT DESIGN (Dynamic SL / TP Protection)
-#     entry = price
-#     tp, sl = entry, entry
-
-#     if "BUY" in signal:
-#         tp = recent_high
-#         if (tp - entry) / pip_multiplier < 12.0:
-#             tp = entry + (15 * pip_multiplier)
-#         sl = recent_low - (atr_val * 0.75)
-#     elif "SELL" in signal:
-#         tp = recent_low
-#         if (entry - tp) / pip_multiplier < 12.0:
-#             tp = entry - (15 * pip_multiplier)
-#         sl = recent_high + (atr_val * 0.75)
-
-#     pips = calculate_pips(entry, tp, pair) if "NEUTRAL" not in signal else 0
-#     rsi_val = rsi(df)
-
-#     return {
-#         "signal": signal,
-#         "confidence": round(confidence, 1),
-#         "entry": round(entry, 5),
-#         "tp": round(tp, 5),
-#         "sl": round(sl, 5),
-#         "pips": round(pips, 1),
-#         "rsi": round(rsi_val, 1),
-#         "structure": f"M30 Control: {htf_bias} | Volume Loop: {'ACTIVE KILLZONE' if is_active_killzone else 'OFF-PEAK FLOW'}",
-#         "buy_score": buy_score,
-#         "sell_score": sell_score,
-#         "session": trading_session(),
-#         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-#         "recent_high": round(recent_high, 5),
-#         "recent_low": round(recent_low, 5)
-#     }
-
-# # =====================================================
-# # ENGINE SCANNER (Isolated Execution Cache)
-# # =====================================================
-# @st.cache_data(ttl=25)
-# def run_scanner(pairs_tuple):
-#     scan_data = []
-#     for p in pairs_tuple:
-#         try:
-#             pair_df = get_data(p)
-#             if pair_df.empty:
-#                 scan_data.append([p, "NO DATA", "—", "—", 0, "—"])
-#                 continue
-#             pair_res = institutional_engine(pair_df, p)
-#             scan_data.append([
-#                 p, pair_res["signal"], f"{pair_res['confidence']}%",
-#                 pair_res["structure"], pair_res["pips"], pair_res["session"]
-#             ])
-#         except Exception:
-#             scan_data.append([p, "ENGINE EXCEPTION", "—", "—", 0, "—"])
-#     return scan_data
-
-# # =====================================================
-# # LIVE DASHBOARD FRAGMENT (Isolated Rapid Frame)
-# # =====================================================
-# @st.fragment(run_every=4)
-# def render_live_dashboard(pair):
-#     market_data = get_data(pair, timeframe=mt5.TIMEFRAME_M15, bars=300)
-#     if market_data.empty:
-#         st.warning(f"Failed to pull active stream buffers for {pair}. Market may be closed.")
-#         return
-
-#     result = institutional_engine(market_data, pair)
-#     st.session_state.shared_prediction = result
-
-#     # Candlestick Visualizations
-#     plot_df = calculate_swing_pivots(market_data, left_bars=5, right_bars=5)
-#     fig = go.Figure()
-
-#     fig.add_trace(go.Candlestick(
-#         x=plot_df["time"], open=plot_df["Open"], high=plot_df["High"],
-#         low=plot_df["Low"], close=plot_df["Close"], name=pair
-#     ))
-#     fig.add_trace(go.Scatter(
-#         x=plot_df["time"], y=plot_df["Swing_High"], mode="markers",
-#         name="Buy-Side Liquidity (BSL)", marker=dict(color="#FF4B4B", size=7, symbol="triangle-down")
-#     ))
-#     fig.add_trace(go.Scatter(
-#         x=plot_df["time"], y=plot_df["Swing_Low"], mode="markers",
-#         name="Sell-Side Liquidity (SSL)", marker=dict(color="#00F0FF", size=7, symbol="triangle-up")
-#     ))
-
-#     if result["recent_high"] > 0:
-#         fig.add_hline(y=result["recent_high"], line_dash="dash", line_color="rgba(255,75,75,0.5)", annotation_text="BSL Pool")
-#         fig.add_hline(y=result["recent_low"],  line_dash="dash", line_color="rgba(0,240,255,0.5)", annotation_text="SSL Pool")
-#         eq = result["recent_low"] + ((result["recent_high"] - result["recent_low"]) * 0.5)
-#         fig.add_hline(y=eq, line_dash="dot", line_color="#FFFF00", annotation_text="Equilibrium (50%)")
-
-#     fig.update_layout(
-#         title=f"🔥 LIVE {pair} (15M Execution Matrix Map)", template="plotly_dark",
-#         height=480, xaxis_rangeslider_visible=False, uirevision="keep",
-#         margin=dict(l=10, r=10, t=40, b=10)
-#     )
-#     st.plotly_chart(fig, use_container_width=True)
-
-#     # Scoring Analytics Frame
-#     st.markdown("### 🔍 Alpha Convergence Matrix Analysis")
-#     max_score = min(int(max(result["buy_score"], result["sell_score"])), 100)
-#     st.progress(max_score / 100)
-
-#     sc1, sc2 = st.columns(2)
-#     sc1.write(f"🟢 **Institutional Accumulation Load:** `{result['buy_score']}/100`")
-#     sc2.write(f"🔴 **Institutional Distribution Load:** `{result['sell_score']}/100`")
-    
-#     st.markdown("---")
-#     c1, c2, c3, c4 = st.columns(4)
-#     c1.metric("Structural Vector", result["signal"])
-#     c2.metric("Matrix Certainty Factor", f"{result['confidence']}%")
-#     c3.metric("Calculated Vector Range", f"{result['pips']} Pips")
-#     c4.metric("Active Session Window", result["session"])
-
-#     with st.expander("Engine Log Buffer (JSON)"):
-#         st.json(result)
-
-#     # Intrusive Signal Capture Alert
-#     if "STRONG" in result["signal"] and result["pips"] >= 12.0:
-#         audio_url = "https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg"
-#         components.html(f'<audio autoplay><source src="{audio_url}" type="audio/ogg"></audio>', height=0)
-#         st.toast(f"🚨 STRATEGIC ALGO DETECTED SETUP ON {pair}!", icon="💰")
-
-# # =====================================================
-# # HIGH REFLECTION GRID SCANNER FRAGMENT
-# # =====================================================
-# @st.fragment(run_every=20)
-# def render_scanner_block():
-#     st.subheader("📡 Cross-Asset Matrix Scanner Grid")
-#     scan_data = run_scanner(tuple(pairs))
-#     scanner_df = pd.DataFrame(scan_data, columns=["Pair", "Signal Bias", "Confidence Factor", "SMC Architecture Status", "Range Projection", "Current Session Flow"])
-#     st.dataframe(scanner_df, use_container_width=True, hide_index=True)
-
-# # =====================================================
-# # MAIN ENGINE LAYOUT ASSEMBLY
-# # =====================================================
-# st.title("🏦 TECH-STAR INSTITUTIONAL QUANT MATRIX TERMINAL 🚀")
-# st.markdown("---")
-
-# # Left Column: Operational Control & Terminal Charts | Right Column: Global Cross Scanner Grid
-# col_layout_left, col_layout_right = st.columns([1.8, 1.2])
-
-# with col_layout_left:
-#     render_live_dashboard(selected_pair)
-
-# with col_layout_right:
-#     render_scanner_block()
-
-# st.markdown("---")
-# current_result = st.session_state.shared_prediction
-
-# # =====================================================
-# # SIGNAL DISPATCH INTERFACE
-# # =====================================================
-# st.subheader("📩 High-Priority Signal Broadcast Hub")
-# confirm_send = st.checkbox("Acknowledge strict compliance with algorithmic validation logic rules.")
-
-# if st.button("🚀 EXECUTE NETWORK TELEGRAM BROADCAST"):
-#     if not confirm_send:
-#         st.warning("Execution Rejected: Affirm network confirmation verification protocol.")
-#     elif "NEUTRAL" in current_result["signal"]:
-#         st.error("Execution Aborted: Algorithmic engine must contain active market matrix parameters to scale broadcast vectors.")
-#     else:
-#         message = f"""🏦 <b>TECH-STAR QUALIFIED ALGO SIGNAL</b>
-
-# VECTOR PAIR: {selected_pair}
-# SIGNAL BIAS: <b>{current_result['signal']}</b>
-# CONFIDENCE COEFFICIENT: {current_result['confidence']}%
-# SMC STRUCTURE: {current_result['structure']}
-
-# ENTRY RATE: {current_result['entry']}
-# TARGET PROFIT (TP): {current_result['tp']}
-# STOP LOSS (SL): {current_result['sl']}
-
-# 📊 EXPECTED RANGE YIELD: <b>{current_result['pips']} Pips</b>
-# Ceiling Liquidity Line: {current_result['recent_high']}
-# Floor Liquidity Line: {current_result['recent_low']}
-
-# RSI SCALAR: {current_result['rsi']}
-# TEMPORAL SESSION: {current_result['session']}
-# SYSTEM TIME STAMP: {current_result['timestamp']}
-# """
-#         ok, err = send_telegram(message)
-#         if ok:
-#             st.success("✅ Broadcast system arrays systematically deployed to Telegram channels.")
-#         else:
-#             st.error(f"❌ Telegram pipeline distribution exception: {err}")
-
-# # =====================================================
-# # ADVANCED ANALYTICAL ENGINE FRAMEWORK (TRADINGVIEW)
-# # =====================================================
-# st.markdown("---")
-# st.subheader("📊 Supplementary Quantitative Analytics Stream")
-# symbol_tv = f"OANDA:{selected_pair}"
-# html_widget = f"""
-# <script src="https://s3.tradingview.com/tv.js"></script>
-# <div id="tv_chart_container"></div>
-# <script>
-# new TradingView.widget({{
-#   "symbol": "{symbol_tv}",
-#   "interval": "15",
-#   "container_id": "tv_chart_container",
-#   "width": "100%",
-#   "height": 500,
-#   "theme": "dark",
-#   "style": "1",
-#   "locale": "en",
-#   "toolbar_bg": "#f1f3f6",
-#   "enable_publishing": false,
-#   "hide_side_toolbar": false,
-#   "allow_symbol_change": true
-# }});
-# </script>
-# """
-# components.html(html_widget, height=520)
-
 import os
 from datetime import datetime, timezone
 import time
@@ -489,7 +8,7 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 import plotly.graph_objects as go
-import MetaTrader5 as mt5
+import yfinance as yf
 
 # =====================================================
 # PAGE CONFIG & PREMIUM INSTITUTIONAL VISUAL THEME
@@ -584,27 +103,9 @@ if not st.session_state.logged_in:
     st.stop()
 
 # =====================================================
-# MT5 INITIALIZATION
+# 20INITIALIZATION
 # =====================================================
-MT5_LOGIN    = int(st.secrets["MT5_LOGIN"])
-MT5_PASSWORD = st.secrets["MT5_PASSWORD"]
-MT5_SERVER   = st.secrets["MT5_SERVER"]
-
-if "mt5_connected" not in st.session_state:
-    st.session_state.mt5_connected = False
-
-if not st.session_state.mt5_connected:
-    if not mt5.initialize():
-        st.error("MT5 initialization failed.")
-        st.stop()
-    if not mt5.login(MT5_LOGIN, MT5_PASSWORD, MT5_SERVER):
-        st.error("MT5 authentication rejected.")
-        mt5.shutdown()
-        st.stop()
-    st.session_state.mt5_connected = True
-
-st.sidebar.success("✅ MT5 Mainframe Connected")
-
+st.sidebar.success("✅ Cloud Data Feed Connected")
 # =====================================================
 # TELEGRAM DISPATCH PIPELINE
 # =====================================================
@@ -639,16 +140,42 @@ pairs = [
 
 selected_pair = st.sidebar.selectbox("Select Active Vector Pair", pairs)
 
-@st.cache_data(ttl=2)
-def get_data(symbol, timeframe=mt5.TIMEFRAME_M15, bars=300):
-    rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, bars)
-    if rates is None or len(rates) == 0:
-        return pd.DataFrame()
-    df = pd.DataFrame(rates)
-    df["time"] = pd.to_datetime(df["time"], unit="s")
-    df.rename(columns={"open": "Open", "high": "High", "low": "Low", "close": "Close", "tick_volume": "Volume"}, inplace=True)
-    return df
+@st.cache_data(ttl=60)
+def get_data(symbol, bars=300):
 
+    mapping = {
+        "EURUSD": "EURUSD=X",
+        "GBPUSD": "GBPUSD=X",
+        "USDJPY": "JPY=X",
+        "AUDUSD": "AUDUSD=X",
+        "XAUUSD": "GC=F"
+    }
+
+    ticker = mapping.get(symbol)
+
+    if ticker is None:
+        return pd.DataFrame()
+
+    df = yf.download(
+        ticker,
+        period="7d",
+        interval="15m",
+        progress=False
+    )
+
+    if df.empty:
+        return pd.DataFrame()
+
+    df = df.reset_index()
+
+    return pd.DataFrame({
+        "time": df["Datetime"],
+        "Open": df["Open"],
+        "High": df["High"],
+        "Low": df["Low"],
+        "Close": df["Close"],
+        "Volume": df["Volume"]
+    })
 # =====================================================
 # MATH & RE-ARCHITECTED ADVANCED SIGNAL ALGORITHMS
 # =====================================================
@@ -770,7 +297,7 @@ def institutional_engine(df, pair):
     atr_val = calculate_atr(df)
 
     # Multi-Timeframe Trend Stack (M30 Structural Filters)
-    df_m30 = get_data(pair, timeframe=mt5.TIMEFRAME_M30, bars=100)
+    df_m30 = get_data(pair, bars=100)
     htf_bias = "NEUTRAL"
     if df_m30 is not None and not df_m30.empty and len(df_m30) >= 30:
         m30_ema20 = df_m30["Close"].ewm(span=20).mean().iloc[-1]
@@ -883,7 +410,7 @@ def run_scanner(pairs_tuple):
 # =====================================================
 @st.fragment(run_every=4)
 def render_live_dashboard(pair):
-    market_data = get_data(pair, timeframe=mt5.TIMEFRAME_M15, bars=300)
+    market_data = get_data(pair, bars=300)
     if market_data.empty:
         st.warning(f"Market Stream for {pair} is currently offline.")
         return
