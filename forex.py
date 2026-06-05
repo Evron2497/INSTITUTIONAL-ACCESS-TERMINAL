@@ -133,7 +133,7 @@ def send_telegram(message: str):
 pairs = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "XAUUSD"]
 selected_pair = st.sidebar.selectbox("Select Active Vector Pair", pairs)
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)
 def get_data(symbol, bars=300, period="7d", interval="15m"):
     mapping = {
         "EURUSD": "EURUSD=X",
@@ -147,45 +147,56 @@ def get_data(symbol, bars=300, period="7d", interval="15m"):
     if ticker is None:
         return pd.DataFrame()
 
-    # Dynamic adjustments based on timeframe selection requests
-    if interval == "30m" and period == "7d":
+    # Normalize parameters based on interval requirements safely
+    if interval == "30m":
         period = "7d"
-    elif bars > 100 and interval == "15m":
+    elif bars > 100:
         period = "7d"
 
-    df = yf.download(
-        ticker,
-        period=period,
-        interval=interval,
-        progress=False
-    )
-
-    if df.empty:
+    try:
+        df = yf.download(
+            ticker,
+            period=period,
+            interval=interval,
+            progress=False
+        )
+    except Exception:
         return pd.DataFrame()
 
-    # Handle MultiIndex Column flattening layouts uniformly
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
+    if df is None or df.empty:
+        return pd.DataFrame()
 
-    # Defensively isolate columns down to clean flat 1D numpy series arrays
+    # Flatten potential MultiIndex column data levels instantly
+    if hasattr(df, "columns") and isinstance(df.columns, pd.MultiIndex):
+        df.columns = [c[0] for c in df.columns]
+
+    # Explicitly pull 1D structures safely
+    def extract_1d_array(dataframe, col_name):
+        if col_name not in dataframe.columns:
+            return np.zeros(len(dataframe))
+        series = dataframe[col_name]
+        if hasattr(series, "ndim") and series.ndim > 1:
+            return np.asarray(series.iloc[:, 0]).flatten()
+        return np.asarray(series).flatten()
+
     try:
-        opens = df["Open"].squeeze().to_numpy().flatten()
-        highs = df["High"].squeeze().to_numpy().flatten()
-        lows  = df["Low"].squeeze().to_numpy().flatten()
-        closes = df["Close"].squeeze().to_numpy().flatten()
-        volumes = df["Volume"].squeeze().to_numpy().flatten()
+        opens   = extract_1d_array(df, "Open")
+        highs   = extract_1d_array(df, "High")
+        lows    = extract_1d_array(df, "Low")
+        closes  = extract_1d_array(df, "Close")
+        volumes = extract_1d_array(df, "Volume")
+        
+        if "Datetime" in df.index.names:
+            time_series = df.index.get_level_values("Datetime").to_numpy().flatten()
+        elif "Date" in df.index.names:
+            time_series = df.index.get_level_values("Date").to_numpy().flatten()
+        else:
+            df = df.reset_index()
+            t_col = "Datetime" if "Datetime" in df.columns else "Date"
+            time_series = df[t_col].to_numpy().flatten()
     except Exception:
-        opens = df["Open"].iloc[:, 0].to_numpy() if df["Open"].ndim > 1 else df["Open"].to_numpy()
-        highs = df["High"].iloc[:, 0].to_numpy() if df["High"].ndim > 1 else df["High"].to_numpy()
-        lows  = df["Low"].iloc[:, 0].to_numpy() if df["Low"].ndim > 1 else df["Low"].to_numpy()
-        closes = df["Close"].iloc[:, 0].to_numpy() if df["Close"].ndim > 1 else df["Close"].to_numpy()
-        volumes = df["Volume"].iloc[:, 0].to_numpy() if df["Volume"].ndim > 1 else df["Volume"].to_numpy()
+        return pd.DataFrame()
 
-    df = df.reset_index()
-    time_col = "Datetime" if "Datetime" in df.columns else "Date"
-    time_series = df[time_col].squeeze().to_numpy().flatten()
-
-    # Cut off output precisely matching historical lookback metrics if necessary
     clean_df = pd.DataFrame({
         "time": time_series,
         "Open": opens.astype(float),
@@ -194,8 +205,8 @@ def get_data(symbol, bars=300, period="7d", interval="15m"):
         "Close": closes.astype(float),
         "Volume": volumes.astype(float)
     })
-    
-    return clean_df.tail(bars).reset_index(drop=True)
+
+    return clean_df.tail(int(bars)).reset_index(drop=True)
 
 # =====================================================
 # MATH & RE-ARCHITECTED ADVANCED SIGNAL ALGORITHMS
@@ -418,7 +429,7 @@ def run_scanner(pairs_tuple):
     for p in pairs_tuple:
         try:
             pair_df = get_data(p, bars=300)
-            if pair_df.empty:
+            if pair_df is None or pair_df.empty:
                 scan_data.append([p, "NO SYMBOL DATA", "—", "—", 0, "—"])
                 continue
             pair_res = institutional_engine(pair_df, p)
@@ -433,7 +444,7 @@ def run_scanner(pairs_tuple):
 @st.fragment(run_every=4)
 def render_live_dashboard(pair):
     market_data = get_data(pair, bars=300)
-    if market_data.empty:
+    if market_data is None or market_data.empty:
         st.warning(f"Market Stream for {pair} is currently offline.")
         return
 
