@@ -157,22 +157,35 @@ def get_data(symbol, period="7d", interval="15m"):
     if df.empty:
         return pd.DataFrame()
 
-    # FIX: Flatten MultiIndex columns that modern yfinance generates
+    # Handle MultiIndex Column layouts returned by modern yfinance packages
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
+    # Defensively isolate columns down to clean 1D dimensional numpy series arrays
+    try:
+        opens = df["Open"].squeeze().to_numpy().flatten()
+        highs = df["High"].squeeze().to_numpy().flatten()
+        lows  = df["Low"].squeeze().to_numpy().flatten()
+        closes = df["Close"].squeeze().to_numpy().flatten()
+        volumes = df["Volume"].squeeze().to_numpy().flatten()
+    except Exception:
+        opens = df["Open"].iloc[:, 0].to_numpy() if df["Open"].ndim > 1 else df["Open"].to_numpy()
+        highs = df["High"].iloc[:, 0].to_numpy() if df["High"].ndim > 1 else df["High"].to_numpy()
+        lows  = df["Low"].iloc[:, 0].to_numpy() if df["Low"].ndim > 1 else df["Low"].to_numpy()
+        closes = df["Close"].iloc[:, 0].to_numpy() if df["Close"].ndim > 1 else df["Close"].to_numpy()
+        volumes = df["Volume"].iloc[:, 0].to_numpy() if df["Volume"].ndim > 1 else df["Volume"].to_numpy()
+
     df = df.reset_index()
-    
-    # Rename Datetime/Date column uniformly
     time_col = "Datetime" if "Datetime" in df.columns else "Date"
+    time_series = df[time_col].squeeze().to_numpy().flatten()
 
     return pd.DataFrame({
-        "time": df[time_col],
-        "Open": df["Open"].astype(float),
-        "High": df["High"].astype(float),
-        "Low": df["Low"].astype(float),
-        "Close": df["Close"].astype(float),
-        "Volume": df["Volume"].astype(float)
+        "time": time_series,
+        "Open": opens.astype(float),
+        "High": highs.astype(float),
+        "Low": lows.astype(float),
+        "Close": closes.astype(float),
+        "Volume": volumes.astype(float)
     })
 
 # =====================================================
@@ -243,7 +256,7 @@ def detect_fvg(df, lookback=20):
 def detect_choch(df, recent_high, recent_low):
     if len(df) < 15: return False, False
     prev_trend_bearish = df["Close"].iloc[-5] < df["Close"].iloc[-12]
-    choch_bull = prev_trend_bearish and df["Close"].iloc[-1] > recent_high
+    choch_bull = prev_trend_bearishand df["Close"].iloc[-1] > recent_high
     
     prev_trend_bullish = df["Close"].iloc[-5] > df["Close"].iloc[-12]
     choch_bear = prev_trend_bullish and df["Close"].iloc[-1] < recent_low
@@ -296,7 +309,7 @@ def institutional_engine(df, pair):
 
     atr_val = calculate_atr(df)
 
-    # Multi-Timeframe Trend Stack (M30 Filter Using Alternate Fetch)
+    # Multi-Timeframe Trend Stack (M30 Structural Filters)
     df_m30 = get_data(pair, period="7d", interval="30m")
     htf_bias = "NEUTRAL"
     if df_m30 is not None and not df_m30.empty and len(df_m30) >= 30:
