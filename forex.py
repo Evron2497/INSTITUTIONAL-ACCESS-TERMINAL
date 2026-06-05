@@ -103,9 +103,10 @@ if not st.session_state.logged_in:
     st.stop()
 
 # =====================================================
-# 20INITIALIZATION
+# INITIALIZATION
 # =====================================================
 st.sidebar.success("✅ Cloud Data Feed Connected")
+
 # =====================================================
 # TELEGRAM DISPATCH PIPELINE
 # =====================================================
@@ -129,20 +130,11 @@ def send_telegram(message: str):
 # =====================================================
 # CONFIG & DATA INGESTION — Streamlined Pairs Array
 # =====================================================
-# Reduced to top 4 high-volume majors + Gold for maximum responsiveness
-pairs = [
-    "EURUSD", 
-    "GBPUSD", 
-    "USDJPY", 
-    "AUDUSD", 
-    "XAUUSD"
-]
-
+pairs = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "XAUUSD"]
 selected_pair = st.sidebar.selectbox("Select Active Vector Pair", pairs)
 
 @st.cache_data(ttl=60)
-def get_data(symbol, bars=300):
-
+def get_data(symbol, period="7d", interval="15m"):
     mapping = {
         "EURUSD": "EURUSD=X",
         "GBPUSD": "GBPUSD=X",
@@ -152,30 +144,37 @@ def get_data(symbol, bars=300):
     }
 
     ticker = mapping.get(symbol)
-
     if ticker is None:
         return pd.DataFrame()
 
     df = yf.download(
         ticker,
-        period="7d",
-        interval="15m",
+        period=period,
+        interval=interval,
         progress=False
     )
 
     if df.empty:
         return pd.DataFrame()
 
+    # FIX: Flatten MultiIndex columns that modern yfinance generates
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
     df = df.reset_index()
+    
+    # Rename Datetime/Date column uniformly
+    time_col = "Datetime" if "Datetime" in df.columns else "Date"
 
     return pd.DataFrame({
-        "time": df["Datetime"],
-        "Open": df["Open"],
-        "High": df["High"],
-        "Low": df["Low"],
-        "Close": df["Close"],
-        "Volume": df["Volume"]
+        "time": df[time_col],
+        "Open": df["Open"].astype(float),
+        "High": df["High"].astype(float),
+        "Low": df["Low"].astype(float),
+        "Close": df["Close"].astype(float),
+        "Volume": df["Volume"].astype(float)
     })
+
 # =====================================================
 # MATH & RE-ARCHITECTED ADVANCED SIGNAL ALGORITHMS
 # =====================================================
@@ -266,6 +265,7 @@ def detect_order_block(df):
 def volume_spike(df, threshold=1.5):
     avg_vol = df["Volume"].tail(20).mean()
     last_vol = df["Volume"].iloc[-1]
+    if avg_vol == 0: return False
     return last_vol > (avg_vol * threshold)
 
 def neutral_result():
@@ -296,8 +296,8 @@ def institutional_engine(df, pair):
 
     atr_val = calculate_atr(df)
 
-    # Multi-Timeframe Trend Stack (M30 Structural Filters)
-    df_m30 = get_data(pair, bars=100)
+    # Multi-Timeframe Trend Stack (M30 Filter Using Alternate Fetch)
+    df_m30 = get_data(pair, period="7d", interval="30m")
     htf_bias = "NEUTRAL"
     if df_m30 is not None and not df_m30.empty and len(df_m30) >= 30:
         m30_ema20 = df_m30["Close"].ewm(span=20).mean().iloc[-1]
@@ -410,7 +410,7 @@ def run_scanner(pairs_tuple):
 # =====================================================
 @st.fragment(run_every=4)
 def render_live_dashboard(pair):
-    market_data = get_data(pair, bars=300)
+    market_data = get_data(pair)
     if market_data.empty:
         st.warning(f"Market Stream for {pair} is currently offline.")
         return
