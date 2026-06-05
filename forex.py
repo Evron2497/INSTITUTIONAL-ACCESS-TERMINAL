@@ -134,7 +134,7 @@ pairs = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "XAUUSD"]
 selected_pair = st.sidebar.selectbox("Select Active Vector Pair", pairs)
 
 @st.cache_data(ttl=60)
-def get_data(symbol, period="7d", interval="15m"):
+def get_data(symbol, bars=300, period="7d", interval="15m"):
     mapping = {
         "EURUSD": "EURUSD=X",
         "GBPUSD": "GBPUSD=X",
@@ -147,6 +147,12 @@ def get_data(symbol, period="7d", interval="15m"):
     if ticker is None:
         return pd.DataFrame()
 
+    # Dynamic adjustments based on timeframe selection requests
+    if interval == "30m" and period == "7d":
+        period = "7d"
+    elif bars > 100 and interval == "15m":
+        period = "7d"
+
     df = yf.download(
         ticker,
         period=period,
@@ -157,11 +163,11 @@ def get_data(symbol, period="7d", interval="15m"):
     if df.empty:
         return pd.DataFrame()
 
-    # Handle MultiIndex Column layouts returned by modern yfinance packages
+    # Handle MultiIndex Column flattening layouts uniformly
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
-    # Defensively isolate columns down to clean 1D dimensional numpy series arrays
+    # Defensively isolate columns down to clean flat 1D numpy series arrays
     try:
         opens = df["Open"].squeeze().to_numpy().flatten()
         highs = df["High"].squeeze().to_numpy().flatten()
@@ -179,7 +185,8 @@ def get_data(symbol, period="7d", interval="15m"):
     time_col = "Datetime" if "Datetime" in df.columns else "Date"
     time_series = df[time_col].squeeze().to_numpy().flatten()
 
-    return pd.DataFrame({
+    # Cut off output precisely matching historical lookback metrics if necessary
+    clean_df = pd.DataFrame({
         "time": time_series,
         "Open": opens.astype(float),
         "High": highs.astype(float),
@@ -187,6 +194,8 @@ def get_data(symbol, period="7d", interval="15m"):
         "Close": closes.astype(float),
         "Volume": volumes.astype(float)
     })
+    
+    return clean_df.tail(bars).reset_index(drop=True)
 
 # =====================================================
 # MATH & RE-ARCHITECTED ADVANCED SIGNAL ALGORITHMS
@@ -256,7 +265,7 @@ def detect_fvg(df, lookback=20):
 def detect_choch(df, recent_high, recent_low):
     if len(df) < 15: return False, False
     prev_trend_bearish = df["Close"].iloc[-5] < df["Close"].iloc[-12]
-    choch_bull = prev_trend_bearishand df["Close"].iloc[-1] > recent_high
+    choch_bull = prev_trend_bearish and df["Close"].iloc[-1] > recent_high
     
     prev_trend_bullish = df["Close"].iloc[-5] > df["Close"].iloc[-12]
     choch_bear = prev_trend_bullish and df["Close"].iloc[-1] < recent_low
@@ -310,7 +319,7 @@ def institutional_engine(df, pair):
     atr_val = calculate_atr(df)
 
     # Multi-Timeframe Trend Stack (M30 Structural Filters)
-    df_m30 = get_data(pair, period="7d", interval="30m")
+    df_m30 = get_data(pair, bars=100, period="7d", interval="30m")
     htf_bias = "NEUTRAL"
     if df_m30 is not None and not df_m30.empty and len(df_m30) >= 30:
         m30_ema20 = df_m30["Close"].ewm(span=20).mean().iloc[-1]
@@ -408,7 +417,7 @@ def run_scanner(pairs_tuple):
     scan_data = []
     for p in pairs_tuple:
         try:
-            pair_df = get_data(p)
+            pair_df = get_data(p, bars=300)
             if pair_df.empty:
                 scan_data.append([p, "NO SYMBOL DATA", "—", "—", 0, "—"])
                 continue
@@ -423,7 +432,7 @@ def run_scanner(pairs_tuple):
 # =====================================================
 @st.fragment(run_every=4)
 def render_live_dashboard(pair):
-    market_data = get_data(pair)
+    market_data = get_data(pair, bars=300)
     if market_data.empty:
         st.warning(f"Market Stream for {pair} is currently offline.")
         return
