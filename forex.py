@@ -128,7 +128,7 @@ def send_telegram(message: str):
     return (len(errors) == 0), "; ".join(errors)
 
 # =====================================================
-# CONFIG & DATA INGESTION — Streamlined Pairs Array
+# CONFIG & DATA INGESTION — Flattened & Sanitized
 # =====================================================
 pairs = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "XAUUSD"]
 selected_pair = st.sidebar.selectbox("Select Active Vector Pair", pairs)
@@ -147,12 +147,11 @@ def get_data(symbol, bars=300, period="7d", interval="15m"):
     if ticker is None:
         return pd.DataFrame()
 
-    if interval == "30m":
-        period = "7d"
-    elif bars > 100:
+    if interval == "30m" or bars > 100:
         period = "7d"
 
     try:
+        # Download data directly
         df = yf.download(ticker, period=period, interval=interval, progress=False)
     except Exception:
         return pd.DataFrame()
@@ -160,33 +159,47 @@ def get_data(symbol, bars=300, period="7d", interval="15m"):
     if df is None or df.empty:
         return pd.DataFrame()
 
-    # In-place modifications to bypass DataFrame dictionary initialization crashes completely
+    # Step 1: Force flatten column headers if they are a MultiIndex combo
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
-    df = df.reset_index()
-    
-    # Rename index datetime explicitly
-    if "Datetime" in df.columns:
-        df = df.rename(columns={"Datetime": "time"})
-    elif "Date" in df.columns:
-        df = df.rename(columns={"Date": "time"})
-    else:
-        df["time"] = df.index
+    # Step 2: Extract 1D arrays reliably to completely circumvent the dictionary 2D error
+    def to_flat_1d(dataframe, target_col):
+        if target_col not in dataframe.columns:
+            return np.zeros(len(dataframe))
+        extracted = dataframe[target_col]
+        # Drop extra dimensions if any remaining nested frames exist
+        if hasattr(extracted, "ndim") and extracted.ndim > 1:
+            return np.asarray(extracted.iloc[:, 0]).flatten()
+        return np.asarray(extracted).flatten()
 
-    # Enforce safe 1D dimensional conversion arrays directly on the columns
-    required_cols = ["time", "Open", "High", "Low", "Close", "Volume"]
-    for col in required_cols:
-        if col in df.columns:
-            if df[col].ndim > 1:
-                df[col] = df[col].iloc[:, 0]
-            if col != "time":
-                df[col] = df[col].astype(float)
+    try:
+        opens = to_flat_1d(df, "Open")
+        highs = to_flat_1d(df, "High")
+        lows = to_flat_1d(df, "Low")
+        closes = to_flat_1d(df, "Close")
+        volumes = to_flat_1d(df, "Volume")
+        
+        # Determine time series column index or name
+        df_reset = df.reset_index()
+        time_col = "Datetime" if "Datetime" in df_reset.columns else "Date"
+        if time_col in df_reset.columns:
+            time_series = to_flat_1d(df_reset, time_col)
         else:
-            df[col] = 0.0 if col != "time" else datetime.now()
+            time_series = np.asarray(df_reset.iloc[:, 0]).flatten()
+    except Exception:
+        return pd.DataFrame()
 
-    # Retain only the verified 1D columns inside our working structure
-    clean_df = df[required_cols].copy()
+    # Step 3: Construct a strictly clean 1-dimensional dictionary layout
+    clean_df = pd.DataFrame({
+        "time": time_series,
+        "Open": opens.astype(float),
+        "High": highs.astype(float),
+        "Low": lows.astype(float),
+        "Close": closes.astype(float),
+        "Volume": volumes.astype(float)
+    })
+
     return clean_df.tail(int(bars)).reset_index(drop=True)
 
 # =====================================================
