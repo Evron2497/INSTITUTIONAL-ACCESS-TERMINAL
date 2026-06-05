@@ -133,7 +133,7 @@ def send_telegram(message: str):
 pairs = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "XAUUSD"]
 selected_pair = st.sidebar.selectbox("Select Active Vector Pair", pairs)
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=15)
 def get_data(symbol, bars=300, period="7d", interval="15m"):
     mapping = {
         "EURUSD": "EURUSD=X",
@@ -147,65 +147,46 @@ def get_data(symbol, bars=300, period="7d", interval="15m"):
     if ticker is None:
         return pd.DataFrame()
 
-    # Normalize parameters based on interval requirements safely
     if interval == "30m":
         period = "7d"
     elif bars > 100:
         period = "7d"
 
     try:
-        df = yf.download(
-            ticker,
-            period=period,
-            interval=interval,
-            progress=False
-        )
+        df = yf.download(ticker, period=period, interval=interval, progress=False)
     except Exception:
         return pd.DataFrame()
 
     if df is None or df.empty:
         return pd.DataFrame()
 
-    # Flatten potential MultiIndex column data levels instantly
-    if hasattr(df, "columns") and isinstance(df.columns, pd.MultiIndex):
-        df.columns = [c[0] for c in df.columns]
+    # In-place modifications to bypass DataFrame dictionary initialization crashes completely
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
 
-    # Explicitly pull 1D structures safely
-    def extract_1d_array(dataframe, col_name):
-        if col_name not in dataframe.columns:
-            return np.zeros(len(dataframe))
-        series = dataframe[col_name]
-        if hasattr(series, "ndim") and series.ndim > 1:
-            return np.asarray(series.iloc[:, 0]).flatten()
-        return np.asarray(series).flatten()
+    df = df.reset_index()
+    
+    # Rename index datetime explicitly
+    if "Datetime" in df.columns:
+        df = df.rename(columns={"Datetime": "time"})
+    elif "Date" in df.columns:
+        df = df.rename(columns={"Date": "time"})
+    else:
+        df["time"] = df.index
 
-    try:
-        opens   = extract_1d_array(df, "Open")
-        highs   = extract_1d_array(df, "High")
-        lows    = extract_1d_array(df, "Low")
-        closes  = extract_1d_array(df, "Close")
-        volumes = extract_1d_array(df, "Volume")
-        
-        if "Datetime" in df.index.names:
-            time_series = df.index.get_level_values("Datetime").to_numpy().flatten()
-        elif "Date" in df.index.names:
-            time_series = df.index.get_level_values("Date").to_numpy().flatten()
+    # Enforce safe 1D dimensional conversion arrays directly on the columns
+    required_cols = ["time", "Open", "High", "Low", "Close", "Volume"]
+    for col in required_cols:
+        if col in df.columns:
+            if df[col].ndim > 1:
+                df[col] = df[col].iloc[:, 0]
+            if col != "time":
+                df[col] = df[col].astype(float)
         else:
-            df = df.reset_index()
-            t_col = "Datetime" if "Datetime" in df.columns else "Date"
-            time_series = df[t_col].to_numpy().flatten()
-    except Exception:
-        return pd.DataFrame()
+            df[col] = 0.0 if col != "time" else datetime.now()
 
-    clean_df = pd.DataFrame({
-        "time": time_series,
-        "Open": opens.astype(float),
-        "High": highs.astype(float),
-        "Low": lows.astype(float),
-        "Close": closes.astype(float),
-        "Volume": volumes.astype(float)
-    })
-
+    # Retain only the verified 1D columns inside our working structure
+    clean_df = df[required_cols].copy()
     return clean_df.tail(int(bars)).reset_index(drop=True)
 
 # =====================================================
@@ -450,7 +431,6 @@ def render_live_dashboard(pair):
 
     result = institutional_engine(market_data, pair)
     
-    # Hysteresis Filter Engine Frame to Avoid Rapid Toggling
     if "last_signal" not in st.session_state:
         st.session_state.last_signal = {"signal": "NEUTRAL", "count": 0}
     
