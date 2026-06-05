@@ -1,0 +1,9 @@
+streamlit
+streamlit-webrtc
+opencv-python-headless
+scikit-learn
+numpy
+pandas
+requests
+plotly
+MetaTrader5
