@@ -13,7 +13,7 @@ import streamlit.components.v1 as components
 # =====================================================
 # SYSTEM DESIGN & ULTRA-DARK ARCHITECTURAL INTERFACE
 # =====================================================
-st.set_page_config(page_title="CORE VECTOR MATRIX PRO", page_icon="🏦", layout="wide")
+st.set_page_config(page_title="VECTOR MATRIX PRO", page_icon="🏦", layout="wide")
 
 st.markdown("""
     <style>
