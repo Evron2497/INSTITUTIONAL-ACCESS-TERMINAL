@@ -163,14 +163,9 @@ def math_rsi(df, period=14):
     return round(100 - (100 / (1 + (l_gain / l_loss))), 2)
 
 def system_session_and_killzone():
-    """
-    UPGRADE: Real-time ICT Engine calculation based on UTC processing clocks.
-    Tracks structural macro states vs targeted algorithm execution hours.
-    """
     now_utc = datetime.now(timezone.utc)
     hour = now_utc.hour
     
-    # Check strict ICT Kill Zone windows
     if 2 <= hour < 5:
         return "LONDON OPEN (KILL ZONE)", True
     elif 7 <= hour < 10:
@@ -178,93 +173,94 @@ def system_session_and_killzone():
     elif 10 <= hour < 12:
         return "LONDON CLOSE (KILL ZONE)", True
     
-    # Standard profile session tracking if out of specific kill zone windows
     if 0 <= hour < 7: return "ASIAN (ACCUMULATION)", False
     elif 7 <= hour < 13: return "LONDON (MANIPULATION)", False
     elif 13 <= hour < 21: return "NEW YORK (DISTRIBUTION)", False
     return "CLOSED (RESTRICTED SYSTEM)", False
 
-def compute_analytics_matrix(pair, df_ltf):
+def compute_analytics_matrix(pair, df_full):
     """
-    UPGRADED ARCHITECTURE: Full implementation of structural SMC transitions
-    (BOS, CHoCH/MSS), Premium vs. Discount scaling, Fibonacci OTE matrices, and Kill Zone verification.
+    UPGRADED BIAS AND STRATEGY REPAINT FILTER ENGINE
     """
-    if df_ltf.empty or len(df_ltf) < 40:
+    if df_full.empty or len(df_full) < 300:
         return st.session_state.global_market_registry[pair]["metrics"]
         
-    # Micro Multi-Timeframe Downsampling Engine
-    df_resampled = df_ltf.set_index("time")
+    # Micro Multi-Timeframe Downsampling Engine using comprehensive history
+    df_resampled = df_full.set_index("time")
     df_itf = df_resampled.resample('1h').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna().reset_index()
     df_htf = df_resampled.resample('4h').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna().reset_index()
 
-    # Macro System Framework Bias (HTF 4H Trend Tracking)
+    # Macro System Framework Bias calculation with stable deep history arrays
     htf_ema = df_htf["Close"].ewm(span=20).mean().iloc[-1]
     itf_ema = df_itf["Close"].ewm(span=20).mean().iloc[-1]
     macro_bullish = df_htf["Close"].iloc[-1] > htf_ema and df_itf["Close"].iloc[-1] > itf_ema
     macro_bearish = df_htf["Close"].iloc[-1] < htf_ema and df_itf["Close"].iloc[-1] < itf_ema
     htf_bias = "BULLISH" if macro_bullish else ("BEARISH" if macro_bearish else "NEUTRAL")
 
-    recent_high = float(df_ltf["High"].tail(30).max())
-    recent_low = float(df_ltf["Low"].tail(30).min())
-    price = float(df_ltf["Close"].iloc[-1])
+    # Target specific closed parameters to avoid signal flickering (flicker lock)
+    df_ltf = df_full.tail(45).copy()
     
-    # Volatility Matrix Engine (ATR tracking for targets)
+    recent_high = float(df_ltf["High"].iloc[-30:].max())
+    recent_low = float(df_ltf["Low"].iloc[-30:].min())
+    price = float(df_ltf["Close"].iloc[-1]) # Current runtime tick execution price
+    
+    # Volatility Matrix Engine
     h_l = df_ltf["High"] - df_ltf["Low"]
     h_pc = abs(df_ltf["High"] - df_ltf["Close"].shift(1))
     l_pc = abs(df_ltf["Low"] - df_ltf["Close"].shift(1))
     atr_val = pd.concat([h_l, h_pc, l_pc], axis=1).max(axis=1).rolling(14).mean().iloc[-1]
     if np.isnan(atr_val): atr_val = 0.001
 
-    # 1. UPGRADE: SMC Market Structure State Machines (BOS vs CHoCH / MSS)
-    prev_high = float(df_ltf["High"].iloc[-2])
-    prev_low = float(df_ltf["Low"].iloc[-2])
+    # SMC Market Structure State Machines built entirely on CLOSED bars
+    prev_high = float(df_ltf["High"].iloc[-3])
+    prev_low = float(df_ltf["Low"].iloc[-3])
+    closed_trigger_price = float(df_ltf["Close"].iloc[-2])
     
     smc_structure = "CONSOLIDATION MODEL"
     structure_score_buy = 0
     structure_score_sell = 0
 
-    if price > prev_high and htf_bias == "BULLISH":
+    if closed_trigger_price > prev_high and htf_bias == "BULLISH":
         smc_structure = "BREAK OF STRUCTURE (BOS)"
         structure_score_buy += 25
-    elif price < prev_low and htf_bias == "BEARISH":
+    elif closed_trigger_price < prev_low and htf_bias == "BEARISH":
         smc_structure = "BREAK OF STRUCTURE (BOS)"
         structure_score_sell += 25
-    elif price > prev_high and htf_bias == "BEARISH":
+    elif closed_trigger_price > prev_high and htf_bias == "BEARISH":
         smc_structure = "MARKET STRUCTURE SHIFT (MSS/CHoCH)"
-        structure_score_buy += 35  # Aggressive shift premium
-    elif price < prev_low and htf_bias == "BULLISH":
+        structure_score_buy += 35  
+    elif closed_trigger_price < prev_low and htf_bias == "BULLISH":
         smc_structure = "MARKET STRUCTURE SHIFT (MSS/CHoCH)"
         structure_score_sell += 35
 
-    # 2. UPGRADE: Premium vs. Discount Framework & Fibonacci OTE Matrix
+    # Premium vs. Discount Framework & Fibonacci OTE Matrix
     trading_range = recent_high - recent_low
     if trading_range == 0: trading_range = 0.001
     
-    # Calculate position inside the range as a clean decimal value
     pct_position = (price - recent_low) / trading_range
-    
-    ote_buy_zone = (0.618 <= (1 - pct_position) <= 0.79)   # Deep discount pullbacks
-    ote_sell_zone = (0.618 <= pct_position <= 0.79)       # Premium pullbacks
-
+    ote_buy_zone = (0.618 <= (1 - pct_position) <= 0.79)   
+    ote_sell_zone = (0.618 <= pct_position <= 0.79)       
     equilibrium_premium = pct_position > 0.50
     equilibrium_discount = pct_position < 0.50
 
-    # 3. UPGRADE: ICT Time Framework Execution Filter
+    # ICT Time Framework Execution Filter
     session_label, is_killzone = system_session_and_killzone()
     killzone_multiplier = 1.4 if is_killzone else 0.8
 
-    # 4. Liquidity & Imbalance Arrays (Liquidity Sweeps & FVGs)
+    # Liquidity Sweeps on Closed Formations
     prev_macro_high = df_htf["High"].iloc[-2] if len(df_htf) >= 2 else recent_high
     prev_macro_low = df_htf["Low"].iloc[-2] if len(df_htf) >= 2 else recent_low
-    sweep_bsl = price > prev_macro_high and df_ltf["Close"].iloc[-1] < prev_macro_high
-    sweep_ssl = price < prev_macro_low and df_ltf["Close"].iloc[-1] > prev_macro_low
+    sweep_bsl = closed_trigger_price > prev_macro_high and df_ltf["Close"].iloc[-2] < prev_macro_high
+    sweep_ssl = closed_trigger_price < prev_macro_low and df_ltf["Close"].iloc[-2] > prev_macro_low
 
+    # Corrected FVG Logic: Testing structural displacement of completed arrays
     avg_vol = df_ltf["Volume"].tail(20).mean()
-    fvg_multiplier = 2.0 if (df_ltf["Volume"].iloc[-2] > (avg_vol * 1.8) if avg_vol > 0 else False) else 1.0
-    fvg_buy = df_ltf["Low"].iloc[-1] > df_ltf["High"].iloc[-3] and df_ltf["Close"].iloc[-2] > df_ltf["Open"].iloc[-2]
-    fvg_sell = df_ltf["High"].iloc[-1] < df_ltf["Low"].iloc[-3] and df_ltf["Close"].iloc[-2] < df_ltf["Open"].iloc[-2]
+    fvg_multiplier = 2.0 if (df_ltf["Volume"].iloc[-3] > (avg_vol * 1.8) if avg_vol > 0 else False) else 1.0
+    
+    fvg_buy = df_ltf["Low"].iloc[-2] > df_ltf["High"].iloc[-4] and df_ltf["Close"].iloc[-3] > df_ltf["Open"].iloc[-3]
+    fvg_sell = df_ltf["High"].iloc[-2] < df_ltf["Low"].iloc[-4] and df_ltf["Close"].iloc[-3] < df_ltf["Open"].iloc[-3]
 
-    # Dynamic Optimization Matrix Integration (Summing Weights)
+    # Dynamic Optimization Matrix Integration
     buy_score = 20 if htf_bias == "BULLISH" else 0
     sell_score = 20 if htf_bias == "BEARISH" else 0
     
@@ -276,18 +272,16 @@ def compute_analytics_matrix(pair, df_ltf):
     if fvg_buy: buy_score += int(15 * fvg_multiplier)
     if fvg_sell: sell_score += int(15 * fvg_multiplier)
 
-    # Apply pure structural blocks (No buying at premium ceiling, no selling at discount floor)
     if equilibrium_discount and ote_buy_zone:
-        buy_score += 20  # Perfect custom Fibonacci OTE confluence
+        buy_score += 20  
     elif equilibrium_premium:
-        buy_score = int(buy_score * 0.4)  # Penalize high risk execution entries
+        buy_score = int(buy_score * 0.4)  
 
     if equilibrium_premium and ote_sell_zone:
         sell_score += 20
     elif equilibrium_discount:
         sell_score = int(sell_score * 0.4)
 
-    # Scale total calculated weight via current Killzone operational multiplier
     buy_score = int(buy_score * killzone_multiplier)
     sell_score = int(sell_score * killzone_multiplier)
 
@@ -326,14 +320,15 @@ def compute_analytics_matrix(pair, df_ltf):
 def background_telemetry_pipeline():
     symbols_to_fetch = list(ticker_mapping.values())
     try:
-        raw_data = yf.download(symbols_to_fetch, period="10d", interval="15m", progress=False, group_by="ticker")
+        # Extended download period to 60 days to correctly satisfy deep 4H downsampling matrices
+        raw_data = yf.download(symbols_to_fetch, period="60d", interval="15m", progress=False, group_by="ticker")
         
         for pair, ticker in ticker_mapping.items():
             if ticker in raw_data.columns.get_level_values(0):
                 df_symbol = raw_data[ticker].dropna().reset_index()
                 t_col = "Datetime" if "Datetime" in df_symbol.columns else "Date"
                 
-                df_ltf = pd.DataFrame({
+                df_full = pd.DataFrame({
                     "time": pd.to_datetime(df_symbol[t_col]),
                     "Open": df_symbol["Open"].astype(float),
                     "High": df_symbol["High"].astype(float),
@@ -342,9 +337,9 @@ def background_telemetry_pipeline():
                     "Volume": df_symbol["Volume"].astype(float)
                 })
                 
-                if not df_ltf.empty:
-                    st.session_state.global_market_registry[pair]["df_ltf_slice"] = df_ltf.tail(45)
-                    st.session_state.global_market_registry[pair]["metrics"] = compute_analytics_matrix(pair, df_ltf)
+                if not df_full.empty:
+                    st.session_state.global_market_registry[pair]["df_ltf_slice"] = df_full.tail(45)
+                    st.session_state.global_market_registry[pair]["metrics"] = compute_analytics_matrix(pair, df_full)
                     
         st.sidebar.markdown(f"<div style='font-family:JetBrains Mono; font-size:0.75rem; color:#64748B; text-align:center;'>MATRIX TELEMETRY SYNC: {datetime.now().strftime('%H:%M:%S')}</div>", unsafe_allow_html=True)
     except Exception:
