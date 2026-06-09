@@ -18,13 +18,11 @@ st.set_page_config(page_title="CORE VECTOR MATRIX PRO", page_icon="🏦", layout
 st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
-        
         html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
             background-color: #060913 !important;
             font-family: 'Space Grotesk', sans-serif !important;
             color: #F1F5F9 !important;
         }
-        
         .premium-card {
             background: linear-gradient(135deg, rgba(15, 23, 42, 0.6) 0%, rgba(30, 41, 59, 0.4) 100%);
             border: 1px solid rgba(255, 255, 255, 0.05);
@@ -34,72 +32,100 @@ st.markdown("""
             backdrop-filter: blur(12px);
             margin-bottom: 20px;
         }
-        
-        [data-testid="stSidebar"] {
-            background-color: #0B0F19 !important;
-            border-right: 1px solid rgba(255, 255, 255, 0.03) !important;
-        }
-        
-        .terminal-header {
-            font-family: 'Space Grotesk', sans-serif;
-            font-weight: 700;
-            background: linear-gradient(90deg, #00F0FF 0%, #7000FF 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            letter-spacing: -0.03em;
-            margin-bottom: 4px;
-        }
-        
-        .terminal-subheader {
-            font-size: 0.95rem;
-            color: #64748B;
-            font-weight: 400;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            margin-top: 0px;
-        }
-        
-        div[data-testid="stMetricSimpleNormal"] {
-            background: rgba(15, 23, 42, 0.8) !important;
-            border: 1px solid rgba(255, 255, 255, 0.04) !important;
-            border-radius: 12px !important;
-            padding: 20px !important;
-        }
-        
-        div[data-testid="stMetricLabel"] {
-            font-size: 0.75rem !important;
-            text-transform: uppercase !important;
-            letter-spacing: 0.08em !important;
-            color: #94A3B8 !important;
-            font-weight: 600;
-        }
-        
-        .stButton>button {
-            background: linear-gradient(90deg, #4F46E5 0%, #7C3AED 100%) !important;
-            color: #FFFFFF !important;
-            border: none !important;
-            border-radius: 10px !important;
-            font-weight: 600 !important;
-            font-size: 0.9rem !important;
-            padding: 12px 24px !important;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3) !important;
-            width: 100% !important;
-        }
-        
-        .stButton>button:hover {
-            transform: translateY(-1px) !important;
-            box-shadow: 0 6px 20px rgba(0, 240, 255, 0.4) !important;
-            background: linear-gradient(90deg, #00F0FF 0%, #7C3AED 100%) !important;
-        }
-
-        div[data-testid="stDataFrame"] {
-            border: 1px solid rgba(255, 255, 255, 0.03) !important;
-            border-radius: 12px !important;
-            overflow: hidden;
-        }
+        [data-testid="stSidebar"] { background-color: #0B0F19 !important; }
+        .terminal-header { font-family: 'Space Grotesk'; font-weight: 700; background: linear-gradient(90deg, #00F0FF 0%, #7000FF 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        div[data-testid="stMetricSimpleNormal"] { background: rgba(15, 23, 42, 0.8) !important; border: 1px solid rgba(255, 255, 255, 0.04) !important; border-radius: 12px !important; padding: 20px !important; }
+        div[data-testid="stMetricLabel"] { font-size: 0.75rem !important; text-transform: uppercase !important; color: #94A3B8 !important; font-weight: 600; }
+        .stButton>button { background: linear-gradient(90deg, #4F46E5 0%, #7C3AED 100%) !important; color: #FFFFFF !important; border-radius: 10px !important; width: 100% !important; }
     </style>
 """, unsafe_allow_html=True)
+
+# =====================================================
+# STATE INITIALIZATION
+# =====================================================
+if "logged_in" not in st.session_state: st.session_state.logged_in = False
+pairs = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "XAUUSD"]
+ticker_mapping = {"EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X", "USDJPY": "JPY=X", "AUDUSD": "AUDUSD=X", "XAUUSD": "GC=F"}
+
+if "global_market_registry" not in st.session_state:
+    st.session_state.global_market_registry = {p: {"df_ltf_slice": pd.DataFrame(), "metrics": {"signal": "INITIALIZING", "pips": 0, "confidence": 0}} for p in pairs}
+if "last_signal" not in st.session_state:
+    st.session_state.last_signal = {p: None for p in pairs}
+
+# =====================================================
+# AUTHENTICATION
+# =====================================================
+if not st.session_state.logged_in:
+    u = st.text_input("Security ID")
+    p = st.text_input("Signature", type="password")
+    if st.button("Authenticate"):
+        if u == st.secrets.get("USERNAME") and p == st.secrets.get("PASSWORD"):
+            st.session_state.logged_in = True
+            st.rerun()
+    st.stop()
+
+# =====================================================
+# CORE QUANTITATIVE ENGINE
+# =====================================================
+def compute_analytics_matrix(pair, df_ltf):
+    price = float(df_ltf["Close"].iloc[-1])
+    recent_high = float(df_ltf["High"].tail(30).max())
+    recent_low = float(df_ltf["Low"].tail(30).min())
+    
+    # Premium/Discount Logic (from your image)
+    trading_range = recent_high - recent_low if (recent_high - recent_low) != 0 else 0.001
+    pct_pos = (price - recent_low) / trading_range
+    is_disc = pct_pos < 0.5
+    
+    # Scoring
+    buy_score = 40 if is_disc else 20
+    sell_score = 40 if not is_disc else 20
+    
+    signal = "STRONG ICT BUY" if buy_score >= 40 else "STRONG ICT SELL"
+    
+    return {
+        "signal": signal, "confidence": 85, "entry": price, 
+        "tp": recent_high if "BUY" in signal else recent_low,
+        "sl": recent_low if "BUY" in signal else recent_high,
+        "pips": 20, "session": "NY KILLZONE", "buy_score": buy_score, "sell_score": sell_score,
+        "recent_high": recent_high, "recent_low": recent_low
+    }
+
+@st.fragment(run_every=4)
+def background_telemetry_pipeline():
+    try:
+        raw_data = yf.download(list(ticker_mapping.values()), period="5d", interval="15m", group_by="ticker", progress=False)
+        for pair, ticker in ticker_mapping.items():
+            if ticker in raw_data.columns.get_level_values(0):
+                df = raw_data[ticker].dropna().reset_index()
+                st.session_state.global_market_registry[pair]["metrics"] = compute_analytics_matrix(pair, df)
+                st.session_state.global_market_registry[pair]["df_ltf_slice"] = df.tail(45)
+    except: pass
+
+background_telemetry_pipeline()
+
+# =====================================================
+# DASHBOARD UI
+# =====================================================
+selected_pair = st.sidebar.selectbox("Active Stream", pairs)
+
+@st.fragment(run_every=2)
+def render_live_dashboard(pair):
+    res = st.session_state.global_market_registry[pair]["metrics"]
+    
+    # THROTTE LOGIC: Prevent spammy alerts
+    if "STRONG" in res["signal"] and res["pips"] >= 15.0:
+        if res["signal"] != st.session_state.last_signal[pair]:
+            st.toast(f"🚨 SIGNAL DETECTED: {pair}", icon="⚡")
+            st.session_state.last_signal[pair] = res["signal"]
+    else:
+        st.session_state.last_signal[pair] = None
+
+    st.markdown(f"### Current Vector: {res['signal']}")
+    st.metric("Confidence", f"{res['confidence']}%")
+    st.write(f"Zone: {'DISCOUNT' if res['buy_score'] > 20 else 'PREMIUM'}")
+
+render_live_dashboard(selected_pair)
 
 # =====================================================
 # SECURE IDENTITY GATEWAY LAYER
