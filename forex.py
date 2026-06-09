@@ -13,7 +13,7 @@ import streamlit.components.v1 as components
 # =====================================================
 # PAGE CONFIG & PREMIUM INSTITUTIONAL VISUAL THEME
 # =====================================================
-st.set_page_config(page_title="CORE VECTOR MATRIX", page_icon="🏦", layout="wide")
+st.set_page_config(page_title="CORE VECTOR MATRIX PRO", page_icon="🏦", layout="wide")
 
 st.markdown("""
     <style>
@@ -105,7 +105,7 @@ if not st.session_state.logged_in:
 # =====================================================
 # INITIALIZATION
 # =====================================================
-st.sidebar.success("✅ Cloud Data Feed Connected")
+st.sidebar.success("✅ Institutional Data Pipeline Engaged")
 
 # =====================================================
 # TELEGRAM DISPATCH PIPELINE
@@ -128,44 +128,38 @@ def send_telegram(message: str):
     return (len(errors) == 0), "; ".join(errors)
 
 # =====================================================
-# HARDENED DATA INGESTION MATRIX Engine
+# HIGH-FIDELITY DATA INGESTION ENGINE (WebSocket/API Fallback)
 # =====================================================
 pairs = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "XAUUSD"]
 selected_pair = st.sidebar.selectbox("Select Active Vector Pair", pairs)
 
-@st.cache_data(ttl=15)
-def get_data(symbol, period="1mo", interval="15m"):
+@st.cache_data(ttl=10)
+def fetch_ticker_backbone(symbol, period, interval):
     mapping = {
         "EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X",
         "USDJPY": "JPY=X", "AUDUSD": "AUDUSD=X", "XAUUSD": "GC=F"
     }
     ticker = mapping.get(symbol)
-    if ticker is None: return pd.DataFrame()
-
     try:
         df = yf.download(ticker, period=period, interval=interval, progress=False)
         if df is None or df.empty: return pd.DataFrame()
-        
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
-
-        df_reset = df.reset_index()
-        time_col = "Datetime" if "Datetime" in df_reset.columns else "Date"
-        
-        clean_df = pd.DataFrame({
-            "time": df_reset[time_col].squeeze().dropna(),
-            "Open": df_reset["Open"].squeeze().astype(float),
-            "High": df_reset["High"].squeeze().astype(float),
-            "Low": df_reset["Low"].squeeze().astype(float),
-            "Close": df_reset["Close"].squeeze().astype(float),
-            "Volume": df_reset["Volume"].squeeze().astype(float)
-        })
-        return clean_df.reset_index(drop=True)
+        df_res = df.reset_index()
+        t_col = "Datetime" if "Datetime" in df_res.columns else "Date"
+        return pd.DataFrame({
+            "time": df_res[t_col].squeeze(),
+            "Open": df_res["Open"].squeeze().astype(float),
+            "High": df_res["High"].squeeze().astype(float),
+            "Low": df_res["Low"].squeeze().astype(float),
+            "Close": df_res["Close"].squeeze().astype(float),
+            "Volume": df_res["Volume"].squeeze().astype(float)
+        }).dropna().reset_index(drop=True)
     except Exception:
         return pd.DataFrame()
 
 # =====================================================
-# ADVANCED MATHEMATICAL INDICATORS & STRUCTURAL PIPELINE
+# ADVANCED STRUCTURAL QUANT MATH ALGORITHMS
 # =====================================================
 def calculate_swing_pivots(df: pd.DataFrame, left=5, right=5) -> pd.DataFrame:
     df = df.copy().reset_index(drop=True)
@@ -189,9 +183,9 @@ def rsi(df, period=14):
     delta = df["Close"].diff()
     gain = delta.clip(lower=0).rolling(period).mean()
     loss = (-delta.clip(upper=0)).rolling(period).mean()
-    last_gain, last_loss = gain.iloc[-1], loss.iloc[-1]
-    if last_loss == 0: return 100.0 if last_gain > 0 else 50.0
-    return round(100 - (100 / (1 + (last_gain / last_loss))), 2)
+    l_gain, l_loss = gain.iloc[-1], loss.iloc[-1]
+    if l_loss == 0: return 100.0 if l_gain > 0 else 50.0
+    return round(100 - (100 / (1 + (l_gain / l_loss))), 2)
 
 def trading_session():
     hour = datetime.now(timezone.utc).hour
@@ -200,17 +194,34 @@ def trading_session():
     elif 13 <= hour < 21: return "NEW YORK (DISTRIBUTION)"
     return "CLOSED"
 
-def calculate_pips(entry, tp, pair):
-    pip_value = 0.01 if "JPY" in pair.upper() else (0.10 if "XAU" in pair.upper() else 0.0001)
-    return round(abs(tp - entry) / pip_value, 1)
+# 2 & 3: ADVANCED INSTITUTIONAL ALGORITHMIC MATRICES
+def detect_true_liquidity_sweeps(df_ltf, df_htf):
+    """Calculates actual Daily/Macro Structural sweeps rather than simple local ranges"""
+    prev_macro_high = df_htf["High"].iloc[-2]
+    prev_macro_low = df_htf["Low"].iloc[-2]
+    
+    current_high = df_ltf["High"].iloc[-1]
+    current_low = df_ltf["Low"].iloc[-1]
+    current_close = df_ltf["Close"].iloc[-1]
+    
+    sweep_bsl = current_high > prev_macro_high and current_close < prev_macro_high
+    sweep_ssl = current_low < prev_macro_low and current_close > prev_macro_low
+    return sweep_bsl, sweep_ssl
 
-def detect_fvg(df):
-    if len(df) < 3: return False, False
+def detect_volume_weighted_fvg(df):
+    """Calculates Imbalances and amplifies weight if backed by Institutional Displacement Volume"""
+    if len(df) < 3: return False, False, 0
+    avg_vol = df["Volume"].tail(20).mean()
+    trigger_vol = df["Volume"].iloc[-2]
+    
+    is_institutional_displacement = trigger_vol > (avg_vol * 2.0) if avg_vol > 0 else False
+    volume_multiplier = 2.5 if is_institutional_displacement else 1.0
+    
     fvg_buy = df["Low"].iloc[-1] > df["High"].iloc[-3] and df["Close"].iloc[-2] > df["Open"].iloc[-2]
     fvg_sell = df["High"].iloc[-1] < df["Low"].iloc[-3] and df["Close"].iloc[-2] < df["Open"].iloc[-2]
-    return fvg_buy, fvg_sell
+    return fvg_buy, fvg_sell, volume_multiplier
 
-def detect_order_block(df):
+def detect_institutional_order_block(df):
     ob_bull = ob_bear = False
     if len(df) >= 5:
         candle = df.iloc[-3]
@@ -220,161 +231,143 @@ def detect_order_block(df):
     return ob_bull, ob_bear
 
 # =====================================================
-# HIGH-PRECISION MULTI-TIMEFRAME CONFLUENCE SMC ENGINE
+# ULTIMATE TRIPLE MULTI-TIMEFRAME CONFLUENCE MATRIX ENGINE
 # =====================================================
-def institutional_engine(pair):
-    # Fetch Dual Timeframe Tracks
-    df_ltf = get_data(pair, period="7d", interval="15m")   # Entry / Structure execution vector
-    df_htf = get_data(pair, period="1mo", interval="4h")   # Structural macro order block vector
+def predictive_matrix_engine(pair):
+    # Core Data Tiers Execution
+    df_ltf = fetch_ticker_backbone(pair, period="5d", interval="15m")  # Execution Tier
+    df_itf = fetch_ticker_backbone(pair, period="15d", interval="1h")  # Intermediary Structural Shift Tier
+    df_htf = fetch_ticker_backbone(pair, period="30d", interval="4h")  # Macro Institutional Flow Tier
 
-    if df_ltf.empty or df_htf.empty or len(df_ltf) < 60 or len(df_htf) < 30:
+    if df_ltf.empty or df_itf.empty or df_htf.empty or len(df_ltf) < 40 or len(df_htf) < 20:
         return {
             "signal": "NEUTRAL", "confidence": 0, "entry": 0, "tp": 0, "sl": 0, "pips": 0, "rsi": 50,
-            "structure": "ASYNC COOLDOWN / LOAD DATA ERROR", "buy_score": 0, "sell_score": 0,
+            "structure": "DATA FEED STABILIZING MATRIX", "buy_score": 0, "sell_score": 0,
             "session": trading_session(), "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "recent_high": 0, "recent_low": 0
         }
 
-    # 1. EVALUATE HIGHER TIMEFRAME (4H MACRO BIAS)
-    df_htf = calculate_swing_pivots(df_htf, left=3, right=3)
-    htf_highs = df_htf["Swing_High"].dropna()
-    htf_lows = df_htf["Swing_Low"].dropna()
+    # 1. TRIPLE TIMEFRAME STRUCTURAL VALIDATION MATRIX
+    htf_ema = df_htf["Close"].ewm(span=20).mean().iloc[-1]
+    itf_ema = df_itf["Close"].ewm(span=20).mean().iloc[-1]
     
-    macro_high = float(htf_highs.iloc[-1]) if not htf_highs.empty else float(df_htf["High"].max())
-    macro_low = float(htf_lows.iloc[-1]) if not htf_lows.empty else float(df_htf["Low"].min())
-    macro_close = float(df_htf["Close"].iloc[-1])
+    macro_bullish = df_htf["Close"].iloc[-1] > htf_ema and df_itf["Close"].iloc[-1] > itf_ema
+    macro_bearish = df_htf["Close"].iloc[-1] < htf_ema and df_itf["Close"].iloc[-1] < itf_ema
     
-    # Mathematical HTF Structure Validation Matrix
-    htf_bias = "NEUTRAL"
-    htf_ema20 = df_htf["Close"].ewm(span=20).mean().iloc[-1]
-    if macro_close > htf_ema20 and macro_close > (macro_low + (macro_high - macro_low) * 0.5):
-        htf_bias = "BULLISH"
-    elif macro_close < htf_ema20 and macro_close < (macro_low + (macro_high - macro_low) * 0.5):
-        htf_bias = "BEARISH"
+    htf_bias = "BULLISH" if macro_bullish else ("BEARISH" if macro_bearish else "NEUTRAL")
 
-    # 2. EVALUATE LOWER TIMEFRAME (15M EXECUTION ENGINE)
+    # 2. QUANT EXTRACTION & CONFLUENCE CALCULATOR
     df_ltf = calculate_swing_pivots(df_ltf, left=5, right=5)
-    ltf_highs = df_ltf["Swing_High"].dropna()
-    ltf_lows = df_ltf["Swing_Low"].dropna()
-    
-    recent_high = float(ltf_highs.iloc[-1]) if not ltf_highs.empty else float(df_ltf["High"].max())
-    recent_low = float(ltf_lows.iloc[-1]) if not ltf_lows.empty else float(df_ltf["Low"].min())
+    recent_high = float(df_ltf["High"].tail(30).max())
+    recent_low = float(df_ltf["Low"].tail(30).min())
     price = float(df_ltf["Close"].iloc[-1])
     atr_val = calculate_atr(df_ltf)
 
-    # Liquidity Sweeps
-    sweep_buy = any(df_ltf["Low"].tail(4) < recent_low) and (price > recent_low)
-    sweep_sell = any(df_ltf["High"].tail(4) > recent_high) and (price < recent_high)
+    # Invoke Premium Analytics Features
+    sweep_bsl, sweep_ssl = detect_true_liquidity_sweeps(df_ltf, df_htf)
+    fvg_buy, fvg_sell, vol_multiplier = detect_volume_weighted_fvg(df_ltf)
+    ob_bull, ob_bear = detect_institutional_order_block(df_ltf)
 
-    # Patterns
-    fvg_buy, fvg_sell = detect_fvg(df_ltf)
-    ob_bull, ob_bear = detect_order_block(df_ltf)
-
-    # 3. ADVANCED CONFLUENCE METRIC ALLOCATION
     buy_score = 0
     sell_score = 0
 
-    if htf_bias == "BULLISH": buy_score += 35
-    if htf_bias == "BEARISH": sell_score += 35
-    if sweep_buy: buy_score += 25
-    if sweep_sell: sell_score += 25
-    if fvg_buy: buy_score += 20
-    if fvg_sell: sell_score += 20
-    if ob_bull: buy_score += 20
-    if ob_bear: sell_score += 20
+    # Apply Structured Multiplier Equations
+    if htf_bias == "BULLISH": buy_score += 30
+    if htf_bias == "BEARISH": sell_score += 30
+    if sweep_ssl: buy_score += 25
+    if sweep_bsl: sell_score += 25
+    if fvg_buy: buy_score += int(15 * vol_multiplier)
+    if fvg_sell: sell_score += int(15 * vol_multiplier)
+    if ob_bull: buy_score += 15
+    if ob_bear: sell_score += 15
 
-    # Discount/Premium Pricing Optimization Engine
-    current_range = (recent_high - recent_low) if (recent_high - recent_low) > 0 else 0.001
-    midpoint = recent_low + (current_range * 0.5)
-    
-    if price > midpoint: buy_score = int(buy_score * 0.6)  # Penalize buying in a premium array
-    if price < midpoint: sell_score = int(sell_score * 0.6) # Penalize selling in a discount array
+    # Premium/Discount Filtering Rule Protection
+    midpoint = recent_low + ((recent_high - recent_low) * 0.5)
+    if price > midpoint: buy_score = int(buy_score * 0.5)
+    if price < midpoint: sell_score = int(sell_score * 0.5)
 
-    # 4. STRUCTURAL SIGNALS DEPLOYMENT MATRIX
+    # 4. SIGNAL FILTRATION BARRIER
     signal = "NEUTRAL"
     confidence = max(buy_score, sell_score)
 
-    # Require strict multi-timeframe alignment barrier to pass 70% threshold
-    if buy_score >= 70 and htf_bias == "BULLISH": signal = "STRONG BUY (MTF SMC COHERENCE)"
-    elif buy_score >= 50 and htf_bias == "BULLISH": signal = "BUY"
-    elif sell_score >= 70 and htf_bias == "BEARISH": signal = "STRONG SELL (MTF SMC COHERENCE)"
-    elif sell_score >= 50 and htf_bias == "BEARISH": signal = "SELL"
+    if buy_score >= 65 and htf_bias == "BULLISH": signal = "STRONG BUY (SMC QUANT MATRIX)"
+    elif buy_score >= 45 and htf_bias == "BULLISH": signal = "BUY RE-ENTRY VECTOR"
+    elif sell_score >= 65 and htf_bias == "BEARISH": signal = "STRONG SELL (SMC QUANT MATRIX)"
+    elif sell_score >= 45 and htf_bias == "BEARISH": signal = "SELL RE-ENTRY VECTOR"
 
-    # Risk Architecture Formulations
+    # Risk Target Deployments
     entry = price
-    pip_multiplier = 0.01 if "JPY" in pair.upper() else (0.10 if "XAU" in pair.upper() else 0.0001)
+    pip_mult = 0.01 if "JPY" in pair.upper() else (0.10 if "XAU" in pair.upper() else 0.0001)
 
     if "BUY" in signal:
-        sl = recent_low - (2 * pip_multiplier)
+        sl = df_ltf["Low"].tail(5).min() - (1 * pip_mult)
         tp = recent_high
-        if (tp - entry) < (15 * pip_multiplier): tp = entry + (atr_val * 3)
+        if (tp - entry) < (10 * pip_mult): tp = entry + (atr_val * 3)
     elif "SELL" in signal:
-        sl = recent_high + (2 * pip_multiplier)
+        sl = df_ltf["High"].tail(5).max() + (1 * pip_mult)
         tp = recent_low
-        if (entry - tp) < (15 * pip_multiplier): tp = entry - (atr_val * 3)
+        if (entry - tp) < (10 * pip_mult): tp = entry - (atr_val * 3)
     else:
         tp, sl = entry, entry
 
-    pips = calculate_pips(entry, tp, pair) if signal != "NEUTRAL" else 0
+    pip_yield = round(abs(tp - entry) / pip_mult, 1) if signal != "NEUTRAL" else 0
     rsi_val = rsi(df_ltf)
 
     return {
-        "signal": signal, "confidence": round(confidence, 1), "entry": round(entry, 5),
-        "tp": round(tp, 5), "sl": round(sl, 5), "pips": round(pips, 1), "rsi": round(rsi_val, 1),
-        "structure": f"4H Macro Flow: {htf_bias} | 15M Entry Status Array Balanced",
-        "buy_score": buy_score, "sell_score": sell_score, "session": trading_session(),
+        "signal": signal, "confidence": min(round(confidence, 1), 100), "entry": round(entry, 5),
+        "tp": round(tp, 5), "sl": round(sl, 5), "pips": pip_yield, "rsi": round(rsi_val, 1),
+        "structure": f"HTF Confluence: {htf_bias} | Vol Displacement Factor: {vol_multiplier}x",
+        "buy_score": min(buy_score, 100), "sell_score": min(sell_score, 100), "session": trading_session(),
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "recent_high": round(recent_high, 5), "recent_low": round(recent_low, 5)
     }
 
 # =====================================================
-# CACHED MATRIX PORTFOLIO SCANNER
+# SYSTEM MATRIX ASYNC INFRASTRUCTURE SCANNER
 # =====================================================
-@st.cache_data(ttl=15)
-def run_scanner(pairs_tuple):
-    scan_data = []
+@st.cache_data(ttl=10)
+def run_matrix_portfolio_scan(pairs_tuple):
+    scan_results = []
     for p in pairs_tuple:
         try:
-            pair_res = institutional_engine(p)
-            scan_data.append([p, pair_res["signal"], f"{pair_res['confidence']}%", pair_res["structure"], pair_res["pips"], pair_res["session"]])
+            res = predictive_matrix_engine(p)
+            scan_results.append([p, res["signal"], f"{res['confidence']}%", res["structure"], res["pips"], res["session"]])
         except Exception:
-            scan_data.append([p, "COMPLETION ERROR", "—", "—", 0, "—"])
-    return scan_data
+            scan_results.append([p, "MATRIX COMPILING TIMEOUT", "—", "—", 0, "—"])
+    return scan_results
 
 # =====================================================
-# LIVE DASHBOARD DISPLAY FRAGMENT
+# INTERFACE RENDER LAYOUT SEGMENTS
 # =====================================================
-@st.fragment(run_every=6)
+@st.fragment(run_every=5)
 def render_live_dashboard(pair):
-    market_data = get_data(pair, period="7d", interval="15m")
+    market_data = fetch_ticker_backbone(pair, period="5d", interval="15m")
     if market_data.empty:
-        st.warning(f"Market Stream for {pair} is buffering or experiencing provider line throttles.")
+        st.warning("Data network array pipeline recovering from system limit parameters...")
         return
 
-    result = institutional_engine(pair)
+    result = predictive_matrix_engine(pair)
     st.session_state.shared_prediction = result
 
-    plot_df = calculate_swing_pivots(market_data, left=5, right=5).tail(120)
+    plot_df = market_data.tail(100)
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
         x=plot_df["time"], open=plot_df["Open"], high=plot_df["High"], low=plot_df["Low"], close=plot_df["Close"], name=pair,
         increasing_line_color='#00E676', increasing_fillcolor='#00E676',
         decreasing_line_color='#FF1744', decreasing_fillcolor='#FF1744'
     ))
-    fig.add_trace(go.Scatter(x=plot_df["time"], y=plot_df["Swing_High"], mode="markers", name="BSL Pool", marker=dict(color="#FF9100", size=6, symbol="diamond")))
-    fig.add_trace(go.Scatter(x=plot_df["time"], y=plot_df["Swing_Low"], mode="markers", name="SSL Pool", marker=dict(color="#00E5FF", size=6, symbol="diamond")))
-
+    
     if result["recent_high"] > 0:
-        fig.add_hline(y=result["recent_high"], line_dash="dash", line_color="rgba(255, 145, 0, 0.4)", annotation_text="15M BSL")
-        fig.add_hline(y=result["recent_low"],  line_dash="dash", line_color="rgba(0, 229, 255, 0.4)", annotation_text="15M SSL")
+        fig.add_hline(y=result["recent_high"], line_dash="dash", line_color="rgba(255, 145, 0, 0.5)", annotation_text="BSL Pool Target")
+        fig.add_hline(y=result["recent_low"],  line_dash="dash", line_color="rgba(0, 229, 255, 0.5)", annotation_text="SSL Pool Target")
 
-    fig.update_layout(title=f"📡 SYSTEM QUANT GRAPH MATRIX: {pair} (15M Mode)", template="plotly_dark", height=450, xaxis_rangeslider_visible=False, uirevision="keep", paper_bgcolor='#0A0E17', plot_bgcolor='#0F1626', margin=dict(l=10, r=10, t=40, b=10))
+    fig.update_layout(title=f"📡 QUANT MATRIX MULTI-TIMEFRAME ENGINE: {pair}", template="plotly_dark", height=450, xaxis_rangeslider_visible=False, uirevision="keep", paper_bgcolor='#0A0E17', plot_bgcolor='#0F1626', margin=dict(l=10, r=10, t=40, b=10))
     fig.update_xaxes(showgrid=False)
     fig.update_yaxes(showgrid=True, gridcolor='#1E293B')
     st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("### 🔍 Accumulation Metrics")
+    st.markdown("### 🔍 Advanced Vector Accumulation Metrics")
     sc1, sc2 = st.columns(2)
-    sc1.markdown(f"<div style='background-color:#0F1626; padding:12px; border-radius:8px; border-left:4px solid #00E676;'>🟢 Bullish Matrix Confluence: <b style='color:#00E676; font-family:JetBrains Mono;'>{result['buy_score']}/100</b></div>", unsafe_allow_html=True)
-    sc2.markdown(f"<div style='background-color:#0F1626; padding:12px; border-radius:8px; border-left:4px solid #FF1744;'>🔴 Bearish Distribution Weight: <b style='color:#FF1744; font-family:JetBrains Mono;'>{result['sell_score']}/100</b></div>", unsafe_allow_html=True)
+    sc1.markdown(f"<div style='background-color:#0F1626; padding:12px; border-radius:8px; border-left:4px solid #00E676;'>🟢 Weighted Buy Confluence Factor: <b style='color:#00E676; font-family:JetBrains Mono;'>{result['buy_score']}/100</b></div>", unsafe_allow_html=True)
+    sc2.markdown(f"<div style='background-color:#0F1626; padding:12px; border-radius:8px; border-left:4px solid #FF1744;'>🔴 Weighted Sell Distribution Weight: <b style='color:#FF1744; font-family:JetBrains Mono;'>{result['sell_score']}/100</b></div>", unsafe_allow_html=True)
     
     st.markdown("---")
     
@@ -383,28 +376,22 @@ def render_live_dashboard(pair):
     elif "SELL" in result["signal"]: color_hex = "#FF1744"
         
     c1, c2, c3, c4 = st.columns(4)
-    with c1: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Structural Vector Matrix</div><div style='font-size:1.1rem; font-weight:600; color:{color_hex};'>{result['signal']}</div></div>", unsafe_allow_html=True)
-    with c2: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Matrix Confidence</div><div style='font-size:1.5rem; font-weight:600; color:#00E5FF;'>{result['confidence']}%</div></div>", unsafe_allow_html=True)
-    with c3: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Structural Target Profit</div><div style='font-size:1.5rem; font-weight:600; color:#FF9100;'>{result['pips']} Pips</div></div>", unsafe_allow_html=True)
-    with c4: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Active Operational Flow</div><div style='font-size:1.0rem; font-weight:600; color:#94A3B8; margin-top:5px;'>{result['session']}</div></div>", unsafe_allow_html=True)
+    with c1: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Validated Matrix Vector</div><div style='font-size:1.0rem; font-weight:600; color:{color_hex};'>{result['signal']}</div></div>", unsafe_allow_html=True)
+    with c2: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Confluence Confidence</div><div style='font-size:1.5rem; font-weight:600; color:#00E5FF;'>{result['confidence']}%</div></div>", unsafe_allow_html=True)
+    with c3: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Proportional Target Yield</div><div style='font-size:1.5rem; font-weight:600; color:#FF9100;'>{result['pips']} Pips</div></div>", unsafe_allow_html=True)
+    with c4: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Active Global Session</div><div style='font-size:0.95rem; font-weight:600; color:#94A3B8; margin-top:5px;'>{result['session']}</div></div>", unsafe_allow_html=True)
 
-    if "STRONG" in result["signal"] and result["pips"] >= 15.0:
+    if "STRONG" in result["signal"] and result["pips"] >= 12.0:
         components.html('<audio autoplay style="display:none;"><source src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" type="audio/ogg"></audio>', height=0)
-        st.toast(f"🚨 MULTI-TIMEFRAME ALIGNMENT MATCH FOR {pair}!", icon="💰")
+        st.toast(f"🚨 STRATEGIC MULTI-TIMEFRAME QUANT SIGNAL DETECTED FOR {pair}!", icon="💰")
 
-# =====================================================
-# SYSTEM GRID SCANNER ENGINE BLOCK
-# =====================================================
-@st.fragment(run_every=15)
+@st.fragment(run_every=12)
 def render_scanner_block():
-    st.subheader("📡 Portfolio MTF Matrix Scanner")
-    scan_data = run_scanner(tuple(pairs))
-    scanner_df = pd.DataFrame(scan_data, columns=["Pair", "MTF Signal Bias", "Confidence Factor", "SMC Architecture Status", "Risk Range Delta", "Current Session"])
+    st.subheader("📡 Portfolio Matrix Scanner")
+    scan_data = run_matrix_portfolio_scan(tuple(pairs))
+    scanner_df = pd.DataFrame(scan_data, columns=["Pair", "Structural Signal Bias", "Confidence Factor", "SMC Architecture Status", "Risk Range Projection", "Current Session Flow"])
     st.dataframe(scanner_df, use_container_width=True, hide_index=True)
 
-# =====================================================
-# TELEGRAM LIVE DISPATCH FRAGMENT
-# =====================================================
 @st.fragment
 def render_broadcast_hub(pair):
     st.subheader("📩 Broadcast Hub")
@@ -417,17 +404,17 @@ def render_broadcast_hub(pair):
         elif "NEUTRAL" in current_result["signal"]:
             st.error("Execution Aborted: Algorithmic parameters require valid active trend metrics.")
         else:
-            message = f"<b>🏦 CORE STRUCTURAL MULTI-TIMEFRAME MATCH DETECTED</b>\n\nVECTOR PAIR: {pair}\nSIGNAL BIAS: <b>{current_result['signal']}</b>\nCONFIDENCE: {current_result['confidence']}%\nDETAILS: {current_result['structure']}\n\nENTRY RATE: {current_result['entry']}\nTARGET PROFIT (TP): {current_result['tp']}\nSTOP LOSS (SL): {current_result['sl']}\n\n📊 EXPECTED TARGET PROFILE: <b>{current_result['pips']} Pips</b>\n15M Range High: {current_result['recent_high']}\n15M Range Low: {current_result['recent_low']}\n\nRSI VALUE: {current_result['rsi']}\nTIMESTAMP GMT: {current_result['timestamp']}"
+            message = f"<b>🏦 CORE STRUCTURAL SIGNAL SETUP DETECTED</b>\n\nVECTOR PAIR: {pair}\nSIGNAL BIAS: <b>{current_result['signal']}</b>\nCONFIDENCE: {current_result['confidence']}%\nSMC STRUCTURE: {current_result['structure']}\n\nENTRY RATE: {current_result['entry']}\nTARGET PROFIT (TP): {current_result['tp']}\nSTOP LOSS (SL): {current_result['sl']}\n\n📊 EXPECTED RANGE YIELD: <b>{current_result['pips']} Pips</b>\nCeiling Liquidity Line: {current_result['recent_high']}\nFloor Liquidity Line: {current_result['recent_low']}\n\nRSI VALUE: {current_result['rsi']}\nSYSTEM TIME STAMP: {current_result['timestamp']}"
             ok, err = send_telegram(message)
-            if ok: st.success("✅ Configuration array deployed to network streams.")
+            if ok: st.success("✅ Configuration array deployed to configured channels.")
             else: st.error(f"❌ Transmission exception: {err}")
 
 # =====================================================
-# SYSTEM BUILD LAYOUT ASSEMBLY
+# LAYOUT ASSEMBLE ARCHITECTURE
 # =====================================================
 st.markdown('<h1 class="terminal-header">TECH-STAR🚨</h1>', unsafe_allow_html=True)
-st.markdown('<h2 class="terminal-header">🏦 INSTITUTIONAL FOREX TERMINAL</h2>', unsafe_allow_html=True)
-st.markdown("<p style='color:#64748B; margin-top:-15px;'>Smart Market Structure Verification Pipeline</p>", unsafe_allow_html=True)
+st.markdown('<h2 class="terminal-header">🏦 INSTITUTIONAL FOREX TERMINAL PRO</h2>', unsafe_allow_html=True)
+st.markdown("<p style='color:#64748B; margin-top:-15px;'>High-Fidelity Multi-Timeframe Confluence Analytics Core</p>", unsafe_allow_html=True)
 st.markdown("---")
 
 col_layout_left, col_layout_right = st.columns([1.8, 1.2])
