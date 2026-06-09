@@ -146,7 +146,8 @@ if "global_market_registry" not in st.session_state:
             "metrics": {
                 "signal": "INITIALIZING MATRIX", "confidence": 0, "entry": 0, "tp": 0, "sl": 0,
                 "pips": 0, "rsi": 50, "structure": "ESTABLISHING CORE LINK", "buy_score": 0, "sell_score": 0,
-                "session": "UNKNOWN", "timestamp": "CALIBRATING FLOW", "recent_high": 0, "recent_low": 0
+                "session": "UNKNOWN", "timestamp": "CALIBRATING FLOW", "recent_high": 0, "recent_low": 0,
+                "bias_15m": "NEUTRAL", "bias_1h": "NEUTRAL", "bias_4h": "NEUTRAL"
             }
         } for p in pairs
     }
@@ -186,27 +187,34 @@ def downsample_and_bias(df_json):
     df_resampled = pd.read_json(df_json)
     df_resampled = df_resampled.set_index("time")
     
+    df_15m = df_resampled.tail(4)
     df_itf = df_resampled.resample('1h').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna()
     df_htf = df_resampled.resample('4h').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna()
 
     htf_ema = df_htf["Close"].ewm(span=20).mean().values[-1]
     itf_ema = df_itf["Close"].ewm(span=20).mean().values[-1]
+    ltf_ema = df_resampled["Close"].ewm(span=20).mean().values[-1]
     
     last_htf = df_htf["Close"].values[-1]
     last_itf = df_itf["Close"].values[-1]
+    last_ltf = df_resampled["Close"].values[-1]
     
     if last_htf > htf_ema and last_itf > itf_ema: htf_bias = "BULLISH"
     elif last_htf < htf_ema and last_itf < itf_ema: htf_bias = "BEARISH"
     else: htf_bias = "NEUTRAL"
     
-    return htf_bias, df_htf["High"].values[-2] if len(df_htf) >= 2 else 0, df_htf["Low"].values[-2] if len(df_htf) >= 2 else 0
+    bias_15m = "🟢 BULL" if last_ltf > ltf_ema else "🔴 BEAR"
+    bias_1h = "🟢 BULL" if last_itf > itf_ema else "🔴 BEAR"
+    bias_4h = "🟢 BULL" if last_htf > htf_ema else "🔴 BEAR"
+    
+    return htf_bias, df_htf["High"].values[-2] if len(df_htf) >= 2 else 0, df_htf["Low"].values[-2] if len(df_htf) >= 2 else 0, bias_15m, bias_1h, bias_4h
 
 def compute_analytics_matrix(pair, df_full):
     if df_full.empty or len(df_full) < 300:
         return st.session_state.global_market_registry[pair]["metrics"]
         
     df_json = df_full[["time", "Open", "High", "Low", "Close", "Volume"]].to_json()
-    htf_bias, prev_macro_high, prev_macro_low = downsample_and_bias(df_json)
+    htf_bias, prev_macro_high, prev_macro_low, bias_15m, bias_1h, bias_4h = downsample_and_bias(df_json)
 
     df_ltf = df_full.tail(45)
     high_vals = df_ltf["High"].values
@@ -314,7 +322,8 @@ def compute_analytics_matrix(pair, df_full):
         "tp": round(tp, 5), "sl": round(sl, 5), "pips": round(abs(tp - price) / pip_mult, 1) if signal != "NEUTRAL" else 0,
         "rsi": math_rsi(df_ltf), "structure": f"{smc_structure} | Matrix: {pricing_framework_string}",
         "buy_score": min(buy_score, 100), "sell_score": min(sell_score, 100), "session": session_label,
-        "timestamp": datetime.now().strftime("%H:%M:%S"), "recent_high": round(recent_high, 5), "recent_low": round(recent_low, 5)
+        "timestamp": datetime.now().strftime("%H:%M:%S"), "recent_high": round(recent_high, 5), "recent_low": round(recent_low, 5),
+        "bias_15m": bias_15m, "bias_1h": bias_1h, "bias_4h": bias_4h
     }
 
 # =====================================================
@@ -351,10 +360,37 @@ if time.time() - st.session_state.last_sync_time > 12:
     st.session_state.last_sync_time = time.time()
 
 # =====================================================
-# ZERO-LATENCY RENDERING UI FRAGMENTS
+# SIDEBAR RISK MATRIX ENGINE (LOT SIZER EXECUTOR)
 # =====================================================
 selected_pair = st.sidebar.selectbox("Active Stream Target", pairs)
 
+st.sidebar.markdown("### 🧮 SYSTEM RISK MATRIX")
+acct_balance = st.sidebar.number_input("Account Balance ($)", min_value=100, value=10000, step=500)
+risk_percentage = st.sidebar.slider("Risk Parameters (%)", 0.25, 5.0, 1.0, step=0.25)
+
+# Calculate active dynamic values
+current_node_metrics = st.session_state.global_market_registry[selected_pair]["metrics"]
+entry_px = current_node_metrics["entry"]
+sl_px = current_node_metrics["sl"]
+
+pip_divider = 0.01 if "JPY" in selected_pair.upper() else (0.10 if "XAU" in selected_pair.upper() else 0.0001)
+sl_pips = round(abs(entry_px - sl_px) / pip_divider, 1) if entry_px != sl_px else 0
+
+if sl_pips > 0:
+    capital_at_risk = acct_balance * (risk_percentage / 100)
+    # Mapping exact standard pip value units relative to standard lot configs
+    pip_val_factor = 100.0 if "JPY" in selected_pair.upper() else (10.0 if "XAU" in selected_pair.upper() else 10.0)
+    calculated_lots = capital_at_risk / (sl_pips * pip_val_factor)
+else:
+    capital_at_risk = 0
+    calculated_lots = 0.0
+
+st.sidebar.metric("Capital Allocation at Risk", f"${capital_at_risk:.2f}")
+st.sidebar.metric("Target Execution Lot Size", f"{calculated_lots:.2f} Lots")
+
+# =====================================================
+# ZERO-LATENCY RENDERING UI FRAGMENTS
+# =====================================================
 @st.fragment(run_every=3)
 def render_live_dashboard(pair):
     cached_node = st.session_state.global_market_registry[pair]
@@ -399,6 +435,7 @@ def render_live_dashboard(pair):
 @st.fragment(run_every=5)
 def render_scanner_block():
     st.markdown('<div class="premium-card">', unsafe_allow_html=True)
+    st.markdown("<h3 style='font-size:1.1rem; color:#00F0FF; margin-bottom:15px; text-transform:uppercase;'>🛰️ Market State Scanner</h3>", unsafe_allow_html=True)
     scan_results = []
     for p in pairs:
         res = st.session_state.global_market_registry[p]["metrics"]
@@ -406,6 +443,26 @@ def render_scanner_block():
             
     scanner_df = pd.DataFrame(scan_results, columns=["Asset Pair", "State", "Confidence", "SMC Diagnostics", "Pips"])
     st.dataframe(scanner_df, use_container_width=True, hide_index=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+@st.fragment(run_every=5)
+def render_bias_matrix_block():
+    st.markdown('<div class="premium-card">', unsafe_allow_html=True)
+    st.markdown("<h3 style='font-size:1.1rem; color:#7000FF; margin-bottom:15px; text-transform:uppercase;'>⚡ Timeframe Bias Convergence Matrix</h3>", unsafe_allow_html=True)
+    bias_results = []
+    for p in pairs:
+        res = st.session_state.global_market_registry[p]["metrics"]
+        # Determine cross-alignment profile state
+        if res["bias_15m"] == res["bias_1h"] == res["bias_4h"]:
+            alignment = "⚡ FULL CONVERGENCE"
+        elif res["bias_15m"] == res["bias_1h"]:
+            alignment = "⚠️ LOCAL ALIGNMENT"
+        else:
+            alignment = "❌ MIXED FLOWS"
+        bias_results.append([p, res["bias_15m"], res["bias_1h"], res["bias_4h"], alignment])
+        
+    bias_df = pd.DataFrame(bias_results, columns=["Asset Pair", "15M Trend", "1H Trend", "4H Trend", "Convergence Profile"])
+    st.dataframe(bias_df, use_container_width=True, hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 @st.fragment
@@ -439,9 +496,11 @@ st.markdown('<h1 class="terminal-header">TECH-STAR PRO</h1>', unsafe_allow_html=
 st.markdown('<p class="terminal-subheader" style="margin-bottom:30px;">High-Fidelity Multi-Timeframe Quantitative Analytics Ecosystem</p>', unsafe_allow_html=True)
 
 col_layout_left, col_layout_right = st.columns([1.9, 1.1])
-with col_layout_left: render_live_dashboard(selected_pair)
+with col_layout_left: 
+    render_live_dashboard(selected_pair)
 with col_layout_right:
     render_scanner_block()
+    render_bias_matrix_block()
     render_broadcast_hub(selected_pair)
 
 st.markdown('<div class="premium-card">', unsafe_allow_html=True)
