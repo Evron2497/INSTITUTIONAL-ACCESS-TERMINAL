@@ -41,122 +41,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =====================================================
-# STATE INITIALIZATION
-# =====================================================
-if "logged_in" not in st.session_state: st.session_state.logged_in = False
-pairs = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "XAUUSD"]
-ticker_mapping = {"EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X", "USDJPY": "JPY=X", "AUDUSD": "AUDUSD=X", "XAUUSD": "GC=F"}
-
-if "global_market_registry" not in st.session_state:
-    st.session_state.global_market_registry = {p: {"df_ltf_slice": pd.DataFrame(), "metrics": {"signal": "INITIALIZING", "pips": 0, "confidence": 0}} for p in pairs}
-if "last_signal" not in st.session_state:
-    st.session_state.last_signal = {p: None for p in pairs}
-
-# =====================================================
-# AUTHENTICATION
-# =====================================================
-if not st.session_state.logged_in:
-    u = st.text_input("Security ID")
-    p = st.text_input("Signature", type="password")
-    if st.button("Authenticate"):
-        if u == st.secrets.get("USERNAME") and p == st.secrets.get("PASSWORD"):
-            st.session_state.logged_in = True
-            st.rerun()
-    st.stop()
-
-# =====================================================
-# CORE QUANTITATIVE ENGINE
-# =====================================================
-def compute_analytics_matrix(pair, df_ltf):
-    price = float(df_ltf["Close"].iloc[-1])
-    recent_high = float(df_ltf["High"].tail(30).max())
-    recent_low = float(df_ltf["Low"].tail(30).min())
-    
-    # Premium/Discount Logic (from your image)
-    trading_range = recent_high - recent_low if (recent_high - recent_low) != 0 else 0.001
-    pct_pos = (price - recent_low) / trading_range
-    is_disc = pct_pos < 0.5
-    
-    # Scoring
-    buy_score = 40 if is_disc else 20
-    sell_score = 40 if not is_disc else 20
-    
-    signal = "STRONG ICT BUY" if buy_score >= 40 else "STRONG ICT SELL"
-    
-    return {
-        "signal": signal, "confidence": 85, "entry": price, 
-        "tp": recent_high if "BUY" in signal else recent_low,
-        "sl": recent_low if "BUY" in signal else recent_high,
-        "pips": 20, "session": "NY KILLZONE", "buy_score": buy_score, "sell_score": sell_score,
-        "recent_high": recent_high, "recent_low": recent_low
-    }
-
-@st.fragment(run_every=4)
-def background_telemetry_pipeline():
-    try:
-        raw_data = yf.download(list(ticker_mapping.values()), period="5d", interval="15m", group_by="ticker", progress=False)
-        for pair, ticker in ticker_mapping.items():
-            if ticker in raw_data.columns.get_level_values(0):
-                df = raw_data[ticker].dropna().reset_index()
-                st.session_state.global_market_registry[pair]["metrics"] = compute_analytics_matrix(pair, df)
-                st.session_state.global_market_registry[pair]["df_ltf_slice"] = df.tail(45)
-    except: pass
-
-background_telemetry_pipeline()
-
-# =====================================================
-# DASHBOARD UI
-# =====================================================
-selected_pair = st.sidebar.selectbox("Active Stream", pairs)
-
-@st.fragment(run_every=2)
-def render_live_dashboard(pair):
-    res = st.session_state.global_market_registry[pair]["metrics"]
-    
-    # THROTTE LOGIC: Prevent spammy alerts
-    if "STRONG" in res["signal"] and res["pips"] >= 15.0:
-        if res["signal"] != st.session_state.last_signal[pair]:
-            st.toast(f"🚨 SIGNAL DETECTED: {pair}", icon="⚡")
-            st.session_state.last_signal[pair] = res["signal"]
-    else:
-        st.session_state.last_signal[pair] = None
-
-    st.markdown(f"### Current Vector: {res['signal']}")
-    st.metric("Confidence", f"{res['confidence']}%")
-    st.write(f"Zone: {'DISCOUNT' if res['buy_score'] > 20 else 'PREMIUM'}")
-
-render_live_dashboard(selected_pair)
-
-# =====================================================
-# SECURE IDENTITY GATEWAY LAYER
-# =====================================================
-USERNAME = st.secrets.get("USERNAME", "")
-PASSWORD = st.secrets.get("PASSWORD", "")
-
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-
-def login():
-    st.markdown('<div class="premium-card" style="max-width: 450px; margin: 80px auto 0px auto;">', unsafe_allow_html=True)
-    st.markdown('<h2 class="terminal-header" style="font-size: 1.8rem; text-align: center;">🏦 CORE SECURITY GATE</h2>', unsafe_allow_html=True)
-    st.markdown('<p class="terminal-subheader" style="text-align: center; margin-bottom: 25px;">Institutional Verification Required</p>', unsafe_allow_html=True)
-    u = st.text_input("Security ID Token / User Key")
-    p = st.text_input("Matrix Access Signature", type="password")
-    st.markdown('<div style="margin-top: 15px;">', unsafe_allow_html=True)
-    if st.button("Authenticate Connection Vector"):
-        if u == USERNAME and p == PASSWORD:
-            st.session_state.logged_in = True
-            st.rerun()
-        else:
-            st.error("Authentication Vector Mismatch: Trace Flagged.")
-    st.markdown('</div></div>', unsafe_allow_html=True)
-
-if not st.session_state.logged_in:
-    login()
-    st.stop()
-
-# =====================================================
-# STATE INITIALIZATION & SYSTEM ARCHITECTURE DEFINITION
+# GLOBAL CONFIGURATION & STATE INITIALIZATION
 # =====================================================
 pairs = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "XAUUSD"]
 ticker_mapping = {
@@ -176,6 +61,44 @@ if "global_market_registry" not in st.session_state:
         } for p in pairs
     }
 
+if "last_signal" not in st.session_state:
+    st.session_state.last_signal = {p: None for p in pairs}
+
+# =====================================================
+# PERSISTENT SECURE IDENTITY GATEWAY (ANTI-REFRESH)
+# =====================================================
+USERNAME = st.secrets.get("USERNAME", "")
+PASSWORD = st.secrets.get("PASSWORD", "")
+
+# Sync session state with browser query params to survive F5 refreshes
+if "logged_in" not in st.session_state:
+    if st.query_params.get("auth_session") == "active":
+        st.session_state.logged_in = True
+    else:
+        st.session_state.logged_in = False
+
+def login_gate():
+    st.markdown('<div class="premium-card" style="max-width: 450px; margin: 80px auto 0px auto;">', unsafe_allow_html=True)
+    st.markdown('<h2 class="terminal-header" style="font-size: 1.8rem; text-align: center;">🏦 CORE SECURITY GATE</h2>', unsafe_allow_html=True)
+    st.markdown('<p class="terminal-subheader" style="text-align: center; margin-bottom: 25px;">Institutional Verification Required</p>', unsafe_allow_html=True)
+    
+    u = st.text_input("Security ID Token / User Key", key="auth_user_input")
+    p = st.text_input("Matrix Access Signature", type="password", key="auth_pass_input")
+    
+    st.markdown('<div style="margin-top: 15px;">', unsafe_allow_html=True)
+    if st.button("Authenticate Connection Vector"):
+        if u == USERNAME and p == PASSWORD:
+            st.session_state.logged_in = True
+            st.query_params["auth_session"] = "active"  # Saved in browser URL bar
+            st.rerun()
+        else:
+            st.error("Authentication Vector Mismatch: Trace Flagged.")
+    st.markdown('</div></div>', unsafe_allow_html=True)
+
+if not st.session_state.logged_in:
+    login_gate()
+    st.stop()
+
 # =====================================================
 # DETACHED HIGH-SPEED SYSTEM TELEMETRY PROCESSING ENGINE
 # =====================================================
@@ -189,14 +112,9 @@ def math_rsi(df, period=14):
     return round(100 - (100 / (1 + (l_gain / l_loss))), 2)
 
 def system_session_and_killzone():
-    """
-    UPGRADE: Real-time ICT Engine calculation based on UTC processing clocks.
-    Tracks structural macro states vs targeted algorithm execution hours.
-    """
     now_utc = datetime.now(timezone.utc)
     hour = now_utc.hour
     
-    # Check strict ICT Kill Zone windows
     if 2 <= hour < 5:
         return "LONDON OPEN (KILL ZONE)", True
     elif 7 <= hour < 10:
@@ -204,26 +122,19 @@ def system_session_and_killzone():
     elif 10 <= hour < 12:
         return "LONDON CLOSE (KILL ZONE)", True
     
-    # Standard profile session tracking if out of specific kill zone windows
     if 0 <= hour < 7: return "ASIAN (ACCUMULATION)", False
     elif 7 <= hour < 13: return "LONDON (MANIPULATION)", False
     elif 13 <= hour < 21: return "NEW YORK (DISTRIBUTION)", False
     return "CLOSED (RESTRICTED SYSTEM)", False
 
 def compute_analytics_matrix(pair, df_ltf):
-    """
-    UPGRADED ARCHITECTURE: Full implementation of structural SMC transitions
-    (BOS, CHoCH/MSS), Premium vs. Discount scaling, Fibonacci OTE matrices, and Kill Zone verification.
-    """
     if df_ltf.empty or len(df_ltf) < 40:
         return st.session_state.global_market_registry[pair]["metrics"]
         
-    # Micro Multi-Timeframe Downsampling Engine
     df_resampled = df_ltf.set_index("time")
     df_itf = df_resampled.resample('1h').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna().reset_index()
     df_htf = df_resampled.resample('4h').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna().reset_index()
 
-    # Macro System Framework Bias (HTF 4H Trend Tracking)
     htf_ema = df_htf["Close"].ewm(span=20).mean().iloc[-1]
     itf_ema = df_itf["Close"].ewm(span=20).mean().iloc[-1]
     macro_bullish = df_htf["Close"].iloc[-1] > htf_ema and df_itf["Close"].iloc[-1] > itf_ema
@@ -234,14 +145,12 @@ def compute_analytics_matrix(pair, df_ltf):
     recent_low = float(df_ltf["Low"].tail(30).min())
     price = float(df_ltf["Close"].iloc[-1])
     
-    # Volatility Matrix Engine (ATR tracking for targets)
     h_l = df_ltf["High"] - df_ltf["Low"]
     h_pc = abs(df_ltf["High"] - df_ltf["Close"].shift(1))
     l_pc = abs(df_ltf["Low"] - df_ltf["Close"].shift(1))
     atr_val = pd.concat([h_l, h_pc, l_pc], axis=1).max(axis=1).rolling(14).mean().iloc[-1]
     if np.isnan(atr_val): atr_val = 0.001
 
-    # 1. UPGRADE: SMC Market Structure State Machines (BOS vs CHoCH / MSS)
     prev_high = float(df_ltf["High"].iloc[-2])
     prev_low = float(df_ltf["Low"].iloc[-2])
     
@@ -257,29 +166,24 @@ def compute_analytics_matrix(pair, df_ltf):
         structure_score_sell += 25
     elif price > prev_high and htf_bias == "BEARISH":
         smc_structure = "MARKET STRUCTURE SHIFT (MSS/CHoCH)"
-        structure_score_buy += 35  # Aggressive shift premium
+        structure_score_buy += 35 
     elif price < prev_low and htf_bias == "BULLISH":
         smc_structure = "MARKET STRUCTURE SHIFT (MSS/CHoCH)"
         structure_score_sell += 35
 
-    # 2. UPGRADE: Premium vs. Discount Framework & Fibonacci OTE Matrix
     trading_range = recent_high - recent_low
     if trading_range == 0: trading_range = 0.001
     
-    # Calculate position inside the range as a clean decimal value
     pct_position = (price - recent_low) / trading_range
-    
-    ote_buy_zone = (0.618 <= (1 - pct_position) <= 0.79)   # Deep discount pullbacks
-    ote_sell_zone = (0.618 <= pct_position <= 0.79)       # Premium pullbacks
+    ote_buy_zone = (0.618 <= (1 - pct_position) <= 0.79)   
+    ote_sell_zone = (0.618 <= pct_position <= 0.79)       
 
     equilibrium_premium = pct_position > 0.50
     equilibrium_discount = pct_position < 0.50
 
-    # 3. UPGRADE: ICT Time Framework Execution Filter
     session_label, is_killzone = system_session_and_killzone()
     killzone_multiplier = 1.4 if is_killzone else 0.8
 
-    # 4. Liquidity & Imbalance Arrays (Liquidity Sweeps & FVGs)
     prev_macro_high = df_htf["High"].iloc[-2] if len(df_htf) >= 2 else recent_high
     prev_macro_low = df_htf["Low"].iloc[-2] if len(df_htf) >= 2 else recent_low
     sweep_bsl = price > prev_macro_high and df_ltf["Close"].iloc[-1] < prev_macro_high
@@ -290,7 +194,6 @@ def compute_analytics_matrix(pair, df_ltf):
     fvg_buy = df_ltf["Low"].iloc[-1] > df_ltf["High"].iloc[-3] and df_ltf["Close"].iloc[-2] > df_ltf["Open"].iloc[-2]
     fvg_sell = df_ltf["High"].iloc[-1] < df_ltf["Low"].iloc[-3] and df_ltf["Close"].iloc[-2] < df_ltf["Open"].iloc[-2]
 
-    # Dynamic Optimization Matrix Integration (Summing Weights)
     buy_score = 20 if htf_bias == "BULLISH" else 0
     sell_score = 20 if htf_bias == "BEARISH" else 0
     
@@ -302,18 +205,16 @@ def compute_analytics_matrix(pair, df_ltf):
     if fvg_buy: buy_score += int(15 * fvg_multiplier)
     if fvg_sell: sell_score += int(15 * fvg_multiplier)
 
-    # Apply pure structural blocks (No buying at premium ceiling, no selling at discount floor)
     if equilibrium_discount and ote_buy_zone:
-        buy_score += 20  # Perfect custom Fibonacci OTE confluence
+        buy_score += 20  
     elif equilibrium_premium:
-        buy_score = int(buy_score * 0.4)  # Penalize high risk execution entries
+        buy_score = int(buy_score * 0.4)  
 
     if equilibrium_premium and ote_sell_zone:
         sell_score += 20
     elif equilibrium_discount:
         sell_score = int(sell_score * 0.4)
 
-    # Scale total calculated weight via current Killzone operational multiplier
     buy_score = int(buy_score * killzone_multiplier)
     sell_score = int(sell_score * killzone_multiplier)
 
@@ -393,6 +294,15 @@ def render_live_dashboard(pair):
         st.info("Synchronizing data matrix structures with the core engine stream...")
         return
 
+    # Anti-Spam Alerts Throttle & Component Update
+    if "STRONG" in result["signal"] and result["pips"] >= 15.0:
+        if result["signal"] != st.session_state.last_signal[pair]:
+            components.html('<audio autoplay style="display:none;"><source src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" type="audio/ogg"></audio>', height=0)
+            st.toast(f"🚨 EXECUTABLE SMC QUANT SIGNAL ON {pair}!", icon="⚡")
+            st.session_state.last_signal[pair] = result["signal"]
+    else:
+        st.session_state.last_signal[pair] = None
+
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
         x=plot_df["time"], open=plot_df["Open"], high=plot_df["High"], low=plot_df["Low"], close=plot_df["Close"], name=pair,
@@ -429,10 +339,6 @@ def render_live_dashboard(pair):
     sc1.markdown(f"<div style='background:rgba(16, 185, 129, 0.06); padding:12px; border-radius:10px; border:1px solid rgba(16, 185, 129, 0.12); font-size:0.9rem;'>🟢 Buy Confluence Weight: <b style='color:#10B981; font-family:JetBrains Mono; float:right;'>{result['buy_score']}/100</b></div>", unsafe_allow_html=True)
     sc2.markdown(f"<div style='background:rgba(239, 68, 68, 0.06); padding:12px; border-radius:10px; border:1px solid rgba(239, 68, 68, 0.12); font-size:0.9rem;'>🔴 Sell Confluence Weight: <b style='color:#EF4444; font-family:JetBrains Mono; float:right;'>{result['sell_score']}/100</b></div>", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
-
-    if "STRONG" in result["signal"] and result["pips"] >= 15.0:
-        components.html('<audio autoplay style="display:none;"><source src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" type="audio/ogg"></audio>', height=0)
-        st.toast(f"🚨 EXECUTABLE SMC QUANT SIGNAL ON {pair}!", icon="⚡")
 
 @st.fragment(run_every=4)
 def render_scanner_block():
