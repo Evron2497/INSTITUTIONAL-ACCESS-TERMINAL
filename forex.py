@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
-import streamlit.components.v1 as components
 import plotly.graph_objects as go
 import yfinance as yf
 
@@ -133,7 +132,7 @@ def send_telegram(message: str):
 pairs = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "XAUUSD"]
 selected_pair = st.sidebar.selectbox("Select Active Vector Pair", pairs)
 
-@st.cache_data(ttl=15)
+@st.cache_data(ttl=20)  # Slightly bumped up to alleviate yfinance rate limits
 def get_data(symbol, bars=300, period="7d", interval="15m"):
     mapping = {
         "EURUSD": "EURUSD=X",
@@ -158,11 +157,9 @@ def get_data(symbol, bars=300, period="7d", interval="15m"):
     if df is None or df.empty:
         return pd.DataFrame()
 
-    # Step 1: Handle MultiIndex columns by extracting the base level explicitly
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
-    # Step 2: Ensure strictly 1D arrays using .squeeze() to drop accidental dimensions
     def to_flat_1d(dataframe, target_col):
         if target_col not in dataframe.columns:
             return np.zeros(len(dataframe))
@@ -199,7 +196,6 @@ def get_data(symbol, bars=300, period="7d", interval="15m"):
 def calculate_swing_pivots(df: pd.DataFrame, left_bars: int = 5, right_bars: int = 5) -> pd.DataFrame:
     df = df.copy().reset_index(drop=True)
     
-    # Vectorized Rolling Window Optimization
     roll_high = df["High"].rolling(window=left_bars + right_bars + 1, center=True).max()
     roll_low = df["Low"].rolling(window=left_bars + right_bars + 1, center=True).min()
     
@@ -307,7 +303,6 @@ def institutional_engine(df, pair):
 
     atr_val = calculate_atr(df)
 
-    # Structural M30 Filters
     df_m30 = get_data(pair, bars=100, period="7d", interval="30m")
     htf_bias = "NEUTRAL"
     if df_m30 is not None and not df_m30.empty and len(df_m30) >= 30:
@@ -393,7 +388,7 @@ def institutional_engine(df, pair):
 # =====================================================
 # CACHED MATRIX PORTFOLIO SCANNER
 # =====================================================
-@st.cache_data(ttl=15)
+@st.cache_data(ttl=20)
 def run_scanner(pairs_tuple):
     scan_data = []
     for p in pairs_tuple:
@@ -411,11 +406,11 @@ def run_scanner(pairs_tuple):
 # =====================================================
 # LIVE DASHBOARD DISPLAY FRAGMENT
 # =====================================================
-@st.fragment(run_every=4)
+@st.fragment(run_every=6)  # Scaled to 6s loop cadence to optimize request budgeting
 def render_live_dashboard(pair):
     market_data = get_data(pair, bars=300)
     if market_data is None or market_data.empty:
-        st.warning(f"Market Stream for {pair} is currently offline.")
+        st.warning(f"Market Stream for {pair} is currently recovering from API throttle limit.")
         return
 
     result = institutional_engine(market_data, pair)
@@ -453,7 +448,7 @@ def render_live_dashboard(pair):
     fig.update_layout(title=f"📡CHART: {pair}", template="plotly_dark", height=450, xaxis_rangeslider_visible=False, uirevision="keep", paper_bgcolor='#0A0E17', plot_bgcolor='#0F1626', margin=dict(l=10, r=10, t=40, b=10))
     fig.update_xaxes(showgrid=False)
     fig.update_yaxes(showgrid=True, gridcolor='#1E293B')
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch") # FIXED: Updated parameter to avoid deprecation runtime crash
 
     st.markdown("### 🔍 Accumulation Metrics")
     sc1, sc2 = st.columns(2)
@@ -463,8 +458,10 @@ def render_live_dashboard(pair):
     st.markdown("---")
     
     color_hex = "#FFFFFF"
-    if "BUY" in result["signal"]: color_hex = "#00E676"
-    elif "SELL" in signal: color_hex = "#FF1744"
+    if "BUY" in result["signal"]: 
+        color_hex = "#00E676"
+    elif "SELL" in result["signal"]:  # FIXED: Pointed safely to result index mapping
+        color_hex = "#FF1744"
         
     c1, c2, c3, c4 = st.columns(4)
     with c1: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Structural Vector</div><div style='font-size:1.5rem; font-weight:600; color:{color_hex};'>{result['signal']}</div></div>", unsafe_allow_html=True)
@@ -473,18 +470,18 @@ def render_live_dashboard(pair):
     with c4: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Session Active</div><div style='font-size:1.1rem; font-weight:600; color:#94A3B8; margin-top:5px;'>{result['session']}</div></div>", unsafe_allow_html=True)
 
     if "STRONG" in result["signal"] and result["pips"] >= 12.0:
-        components.html('<audio autoplay><source src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" type="audio/ogg"></audio>', height=0)
+        st.iframe('https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg', height=0) # FIXED: Component wrapper updated
         st.toast(f"🚨 STRATEGIC SYSTEM SETUP DETECTED FOR {pair}!", icon="💰")
 
 # =====================================================
 # SYSTEM GRID SCANNER ENGINE BLOCK
 # =====================================================
-@st.fragment(run_every=10)
+@st.fragment(run_every=15)
 def render_scanner_block():
     st.subheader("📡 Portfolio Matrix Scanner")
     scan_data = run_scanner(tuple(pairs))
     scanner_df = pd.DataFrame(scan_data, columns=["Pair", "Signal Bias", "Confidence", "SMC Architecture Status", "Range Projection", "Current Session Flow"])
-    st.dataframe(scanner_df, use_container_width=True, hide_index=True)
+    st.dataframe(scanner_df, width="stretch", hide_index=True) # FIXED: Adjusted sizing mechanics
 
 # =====================================================
 # TELEGRAM LIVE DISPATCH FRAGMENT
@@ -501,7 +498,7 @@ def render_broadcast_hub(pair):
         elif "NEUTRAL" in current_result["signal"]:
             st.error("Execution Aborted: Algorithmic parameters require valid active trend metrics.")
         else:
-            message = f"""🏦 <b>CORE STRUCTURAL SIGNAL SETUP</b>\n\nVECTOR PAIR: {pair}\nSIGNAL BIAS: <b>{current_result['signal']}</b>\nCONFIDENCE COEFFICIENT: {current_result['confidence']}%\nSMC STRUCTURE: {current_result['structure']}\n\nENTRY RATE: {current_result['entry']}\nTARGET PROFIT (TP): {current_result['tp']}\nSTOP LOSS (SL): {current_result['sl']}\n\n📊 EXPECTED RANGE YIELD: <b>{current_result['pips']} Pips</b>\nCeiling Liquidity Line: {current_result['recent_high']}\nFloor Liquidity Line: {current_result['recent_low']}\n\nRSI VALUE: {current_result['rsi']}\nSYSTEM TIME STAMP: {current_result['timestamp']}"""
+            message = f"<b>CORE STRUCTURAL SIGNAL SETUP</b>\n\nVECTOR PAIR: {pair}\nSIGNAL BIAS: <b>{current_result['signal']}</b>\nCONFIDENCE COEFFICIENT: {current_result['confidence']}%\nSMC STRUCTURE: {current_result['structure']}\n\nENTRY RATE: {current_result['entry']}\nTARGET PROFIT (TP): {current_result['tp']}\nSTOP LOSS (SL): {current_result['sl']}\n\n📊 EXPECTED RANGE YIELD: <b>{current_result['pips']} Pips</b>\nCeiling Liquidity Line: {current_result['recent_high']}\nFloor Liquidity Line: {current_result['recent_low']}\n\nRSI VALUE: {current_result['rsi']}\nSYSTEM TIME STAMP: {current_result['timestamp']}"
             ok, err = send_telegram(message)
             if ok: st.success("✅ Configuration array deployed to configured channels.")
             else: st.error(f"❌ Transmission exception: {err}")
@@ -530,7 +527,13 @@ render_broadcast_hub(selected_pair)
 # =====================================================
 st.markdown("---")
 st.subheader("📊 Quantitative Analytics Stream")
-components.html(f"""
+
+# FIXED: Wrapped raw HTML setup using clean, modern iframe parameters
+tradingview_srcdoc = f"""
+<!DOCTYPE html>
+<html>
+<head><style>body {{ margin: 0; background-color: #0A0E17; }}</style></head>
+<body>
 <script src="https://s3.tradingview.com/tv.js"></script>
 <div id="tv_chart_container"></div>
 <script>
@@ -549,4 +552,7 @@ new TradingView.widget({{
   "allow_symbol_change": true
 }});
 </script>
-""", height=520)
+</body>
+</html>
+"""
+st.iframe(srcdoc=tradingview_srcdoc, height=520)
