@@ -144,10 +144,9 @@ if "global_market_registry" not in st.session_state:
         p: {
             "df_ltf_slice": pd.DataFrame(),
             "metrics": {
-                "signal": "INITIALIZING MATRIX", "confidence": 0, "entry": 0, "tp": 0, "sl": 0,
-                "pips": 0, "rsi": 50, "structure": "ESTABLISHING CORE LINK", "buy_score": 0, "sell_score": 0,
-                "session": "UNKNOWN", "timestamp": "CALIBRATING FLOW", "recent_high": 0, "recent_low": 0,
-                # Safe fallback definitions initialized here to eliminate race-condition KeyErrors
+                "signal": "INITIALIZING MATRIX", "confidence": 0.0, "entry": 0.0, "tp": 0.0, "sl": 0.0,
+                "pips": 0.0, "rsi": 50.0, "structure": "ESTABLISHING CORE LINK", "buy_score": 0, "sell_score": 0,
+                "session": "UNKNOWN", "timestamp": "CALIBRATING FLOW", "recent_high": 0.0, "recent_low": 0.0,
                 "bias_15m": "NEUTRAL", "bias_1h": "NEUTRAL", "bias_4h": "NEUTRAL"
             }
         } for p in pairs
@@ -184,20 +183,18 @@ def system_session_and_killzone():
 
 @st.cache_data(ttl=15, show_spinner=False)
 def downsample_and_bias(df_json):
-    """ Vectorized and cached matrix engine using raw records to prevent UI blocking """
     df_resampled = pd.read_json(df_json)
     df_resampled = df_resampled.set_index("time")
     
-    df_15m = df_resampled.tail(4)
     df_itf = df_resampled.resample('1h').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna()
     df_htf = df_resampled.resample('4h').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna()
 
-    htf_ema = df_htf["Close"].ewm(span=20).mean().values[-1]
-    itf_ema = df_itf["Close"].ewm(span=20).mean().values[-1]
+    htf_ema = df_htf["Close"].ewm(span=20).mean().values[-1] if len(df_htf) > 0 else df_resampled["Close"].values[-1]
+    itf_ema = df_itf["Close"].ewm(span=20).mean().values[-1] if len(df_itf) > 0 else df_resampled["Close"].values[-1]
     ltf_ema = df_resampled["Close"].ewm(span=20).mean().values[-1]
     
-    last_htf = df_htf["Close"].values[-1]
-    last_itf = df_itf["Close"].values[-1]
+    last_htf = df_htf["Close"].values[-1] if len(df_htf) > 0 else df_resampled["Close"].values[-1]
+    last_itf = df_itf["Close"].values[-1] if len(df_itf) > 0 else df_resampled["Close"].values[-1]
     last_ltf = df_resampled["Close"].values[-1]
     
     if last_htf > htf_ema and last_itf > itf_ema: htf_bias = "BULLISH"
@@ -208,7 +205,7 @@ def downsample_and_bias(df_json):
     bias_1h = "🟢 BULL" if last_itf > itf_ema else "🔴 BEAR"
     bias_4h = "🟢 BULL" if last_htf > htf_ema else "🔴 BEAR"
     
-    return htf_bias, df_htf["High"].values[-2] if len(df_htf) >= 2 else 0, df_htf["Low"].values[-2] if len(df_htf) >= 2 else 0, bias_15m, bias_1h, bias_4h
+    return htf_bias, df_htf["High"].values[-2] if len(df_htf) >= 2 else 0.0, df_htf["Low"].values[-2] if len(df_htf) >= 2 else 0.0, bias_15m, bias_1h, bias_4h
 
 def compute_analytics_matrix(pair, df_full):
     if df_full.empty or len(df_full) < 300:
@@ -319,11 +316,11 @@ def compute_analytics_matrix(pair, df_full):
     pricing_framework_string = "OTE Discount" if equilibrium_discount else "OTE Premium"
     
     return {
-        "signal": signal, "confidence": min(round(confidence, 1), 100), "entry": round(price, 5),
-        "tp": round(tp, 5), "sl": round(sl, 5), "pips": round(abs(tp - price) / pip_mult, 1) if signal != "NEUTRAL" else 0,
-        "rsi": math_rsi(df_ltf), "structure": f"{smc_structure} | Matrix: {pricing_framework_string}",
+        "signal": signal, "confidence": min(round(float(confidence), 1), 100.0), "entry": round(float(price), 5),
+        "tp": round(float(tp), 5), "sl": round(float(sl), 5), "pips": round(float(abs(tp - price) / pip_mult), 1) if signal != "NEUTRAL" else 0.0,
+        "rsi": float(math_rsi(df_ltf)), "structure": f"{smc_structure} | Matrix: {pricing_framework_string}",
         "buy_score": min(buy_score, 100), "sell_score": min(sell_score, 100), "session": session_label,
-        "timestamp": datetime.now().strftime("%H:%M:%S"), "recent_high": round(recent_high, 5), "recent_low": round(recent_low, 5),
+        "timestamp": datetime.now().strftime("%H:%M:%S"), "recent_high": round(float(recent_high), 5), "recent_low": round(float(recent_low), 5),
         "bias_15m": bias_15m, "bias_1h": bias_1h, "bias_4h": bias_4h
     }
 
@@ -331,10 +328,13 @@ def compute_analytics_matrix(pair, df_full):
 # ASYNCHRONOUS THREAD NETWORK PIPELINE
 # =====================================================
 def async_data_fetcher():
-    """ Runs isolated in a background thread to prevent UI freezing """
+    """ Thread-safe execution using atomic state buffer replacements """
     symbols_to_fetch = list(ticker_mapping.values())
     try:
         raw_data = yf.download(symbols_to_fetch, period="60d", interval="15m", progress=False, group_by="ticker")
+        
+        # Build local register first to prevent structural mutation race conditions
+        temp_registry = {}
         for pair, ticker in ticker_mapping.items():
             if ticker in raw_data.columns.get_level_values(0):
                 df_symbol = raw_data[ticker].dropna()
@@ -347,14 +347,23 @@ def async_data_fetcher():
                         "Close": df_symbol["Close"].values,
                         "Volume": df_symbol["Volume"].values
                     })
-                    st.session_state.global_market_registry[pair]["df_ltf_slice"] = df_full.tail(45)
-                    st.session_state.global_market_registry[pair]["metrics"] = compute_analytics_matrix(pair, df_full)
+                    
+                    temp_registry[pair] = {
+                        "df_ltf_slice": df_full.tail(45),
+                        "metrics": compute_analytics_matrix(pair, df_full)
+                    }
+        
+        # Atomic switch over to session state tracking
+        for pair in temp_registry:
+            st.session_state.global_market_registry[pair]["df_ltf_slice"] = temp_registry[pair]["df_ltf_slice"]
+            st.session_state.global_market_registry[pair]["metrics"] = temp_registry[pair]["metrics"]
+
     except Exception:
         pass
 
-# Multithread initialization checker
+# Multithread execution throttle
 if "last_sync_time" not in st.session_state:
-    st.session_state.last_sync_time = 0
+    st.session_state.last_sync_time = 0.0
 
 if time.time() - st.session_state.last_sync_time > 12:
     threading.Thread(target=async_data_fetcher, daemon=True).start()
@@ -369,21 +378,20 @@ st.sidebar.markdown("### 🧮 SYSTEM RISK MATRIX")
 acct_balance = st.sidebar.number_input("Account Balance ($)", min_value=100, value=10000, step=500)
 risk_percentage = st.sidebar.slider("Risk Parameters (%)", 0.25, 5.0, 1.0, step=0.25)
 
-# Calculate active dynamic values
+# Calculate active dynamic values safely
 current_node_metrics = st.session_state.global_market_registry[selected_pair]["metrics"]
-entry_px = current_node_metrics["entry"]
-sl_px = current_node_metrics["sl"]
+entry_px = float(current_node_metrics["entry"])
+sl_px = float(current_node_metrics["sl"])
 
 pip_divider = 0.01 if "JPY" in selected_pair.upper() else (0.10 if "XAU" in selected_pair.upper() else 0.0001)
-sl_pips = round(abs(entry_px - sl_px) / pip_divider, 1) if entry_px != sl_px else 0
+sl_pips = round(abs(entry_px - sl_px) / pip_divider, 1) if entry_px != sl_px else 0.0
 
 if sl_pips > 0:
-    capital_at_risk = acct_balance * (risk_percentage / 100)
-    # Mapping exact standard pip value units relative to standard lot configs
+    capital_at_risk = acct_balance * (risk_percentage / 100.0)
     pip_val_factor = 100.0 if "JPY" in selected_pair.upper() else (10.0 if "XAU" in selected_pair.upper() else 10.0)
     calculated_lots = capital_at_risk / (sl_pips * pip_val_factor)
 else:
-    capital_at_risk = 0
+    capital_at_risk = 0.0
     calculated_lots = 0.0
 
 st.sidebar.metric("Capital Allocation at Risk", f"${capital_at_risk:.2f}")
@@ -454,7 +462,6 @@ def render_bias_matrix_block():
     for p in pairs:
         res = st.session_state.global_market_registry[p]["metrics"]
         
-        # Guard clause handling the initial default fallback strings smoothly
         if "NEUTRAL" in [res.get("bias_15m"), res.get("bias_1h"), res.get("bias_4h")]:
             alignment = "⏳ SYNCING CORES..."
         elif res["bias_15m"] == res["bias_1h"] == res["bias_4h"]:
@@ -489,8 +496,10 @@ def render_broadcast_hub(pair):
         else:
             message = f"<b>🏦 DISPATCH</b>\n\nPAIR: {pair}\nBIAS: <b>{current_result['signal']}</b>\nENTRY: {current_result['entry']}\nTP: {current_result['tp']}\nSL: {current_result['sl']}"
             for chat_id in CHAT_IDS:
-                try: requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data={"chat_id": chat_id, "text": message, "parse_mode": "HTML"}, timeout=5)
-                except Exception: pass
+                try: 
+                    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data={"chat_id": chat_id, "text": message, "parse_mode": "HTML"}, timeout=5)
+                except Exception: 
+                    pass
             st.success("Payload pushed successfully.")
     st.markdown('</div>', unsafe_allow_html=True)
 
