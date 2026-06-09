@@ -138,7 +138,6 @@ ticker_mapping = {
     "USDJPY": "JPY=X", "AUDUSD": "AUDUSD=X", "XAUUSD": "GC=F"
 }
 
-# Core Global Memory Initialization
 if "global_market_registry" not in st.session_state:
     st.session_state.global_market_registry = {
         p: {
@@ -163,26 +162,42 @@ def math_rsi(df, period=14):
     if l_loss == 0: return 100.0 if l_gain > 0 else 50.0
     return round(100 - (100 / (1 + (l_gain / l_loss))), 2)
 
-def system_session():
-    hour = datetime.now(timezone.utc).hour
-    if 0 <= hour < 7: return "ASIAN (ACCUMULATION)"
-    elif 7 <= hour < 13: return "LONDON (MANIPULATION)"
-    elif 13 <= hour < 21: return "NEW YORK (DISTRIBUTION)"
-    return "CLOSED"
+def system_session_and_killzone():
+    """
+    UPGRADE: Real-time ICT Engine calculation based on UTC processing clocks.
+    Tracks structural macro states vs targeted algorithm execution hours.
+    """
+    now_utc = datetime.now(timezone.utc)
+    hour = now_utc.hour
+    
+    # Check strict ICT Kill Zone windows
+    if 2 <= hour < 5:
+        return "LONDON OPEN (KILL ZONE)", True
+    elif 7 <= hour < 10:
+        return "NY OPEN (KILL ZONE)", True
+    elif 10 <= hour < 12:
+        return "LONDON CLOSE (KILL ZONE)", True
+    
+    # Standard profile session tracking if out of specific kill zone windows
+    if 0 <= hour < 7: return "ASIAN (ACCUMULATION)", False
+    elif 7 <= hour < 13: return "LONDON (MANIPULATION)", False
+    elif 13 <= hour < 21: return "NEW YORK (DISTRIBUTION)", False
+    return "CLOSED (RESTRICTED SYSTEM)", False
 
 def compute_analytics_matrix(pair, df_ltf):
     """
-    Highly optimized math module running completely isolated in memory.
+    UPGRADED ARCHITECTURE: Full implementation of structural SMC transitions
+    (BOS, CHoCH/MSS), Premium vs. Discount scaling, Fibonacci OTE matrices, and Kill Zone verification.
     """
     if df_ltf.empty or len(df_ltf) < 40:
         return st.session_state.global_market_registry[pair]["metrics"]
         
-    # Micro Downsampling Pipeline
+    # Micro Multi-Timeframe Downsampling Engine
     df_resampled = df_ltf.set_index("time")
     df_itf = df_resampled.resample('1h').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna().reset_index()
     df_htf = df_resampled.resample('4h').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna().reset_index()
 
-    # Technical Indicators Calculations
+    # Macro System Framework Bias (HTF 4H Trend Tracking)
     htf_ema = df_htf["Close"].ewm(span=20).mean().iloc[-1]
     itf_ema = df_itf["Close"].ewm(span=20).mean().iloc[-1]
     macro_bullish = df_htf["Close"].iloc[-1] > htf_ema and df_itf["Close"].iloc[-1] > itf_ema
@@ -193,42 +208,96 @@ def compute_analytics_matrix(pair, df_ltf):
     recent_low = float(df_ltf["Low"].tail(30).min())
     price = float(df_ltf["Close"].iloc[-1])
     
-    # ATR Extraction
+    # Volatility Matrix Engine (ATR tracking for targets)
     h_l = df_ltf["High"] - df_ltf["Low"]
     h_pc = abs(df_ltf["High"] - df_ltf["Close"].shift(1))
     l_pc = abs(df_ltf["Low"] - df_ltf["Close"].shift(1))
     atr_val = pd.concat([h_l, h_pc, l_pc], axis=1).max(axis=1).rolling(14).mean().iloc[-1]
     if np.isnan(atr_val): atr_val = 0.001
 
-    # SMC Structural Checkpoints
-    prev_macro_high, prev_macro_low = df_htf["High"].iloc[-2], df_htf["Low"].iloc[-2] if len(df_htf) >= 2 else (recent_high, recent_low)
+    # 1. UPGRADE: SMC Market Structure State Machines (BOS vs CHoCH / MSS)
+    prev_high = float(df_ltf["High"].iloc[-2])
+    prev_low = float(df_ltf["Low"].iloc[-2])
+    
+    smc_structure = "CONSOLIDATION MODEL"
+    structure_score_buy = 0
+    structure_score_sell = 0
+
+    if price > prev_high and htf_bias == "BULLISH":
+        smc_structure = "BREAK OF STRUCTURE (BOS)"
+        structure_score_buy += 25
+    elif price < prev_low and htf_bias == "BEARISH":
+        smc_structure = "BREAK OF STRUCTURE (BOS)"
+        structure_score_sell += 25
+    elif price > prev_high and htf_bias == "BEARISH":
+        smc_structure = "MARKET STRUCTURE SHIFT (MSS/CHoCH)"
+        structure_score_buy += 35  # Aggressive shift premium
+    elif price < prev_low and htf_bias == "BULLISH":
+        smc_structure = "MARKET STRUCTURE SHIFT (MSS/CHoCH)"
+        structure_score_sell += 35
+
+    # 2. UPGRADE: Premium vs. Discount Framework & Fibonacci OTE Matrix
+    trading_range = recent_high - recent_low
+    if trading_range == 0: trading_range = 0.001
+    
+    # Calculate position inside the range as a clean decimal value
+    pct_position = (price - recent_low) / trading_range
+    
+    ote_buy_zone = (0.618 <= (1 - pct_position) <= 0.79)   # Deep discount pullbacks
+    ote_sell_zone = (0.618 <= pct_position <= 0.79)       # Premium pullbacks
+
+    equilibrium_premium = pct_position > 0.50
+    equilibrium_discount = pct_position < 0.50
+
+    # 3. UPGRADE: ICT Time Framework Execution Filter
+    session_label, is_killzone = system_session_and_killzone()
+    killzone_multiplier = 1.4 if is_killzone else 0.8
+
+    # 4. Liquidity & Imbalance Arrays (Liquidity Sweeps & FVGs)
+    prev_macro_high = df_htf["High"].iloc[-2] if len(df_htf) >= 2 else recent_high
+    prev_macro_low = df_htf["Low"].iloc[-2] if len(df_htf) >= 2 else recent_low
     sweep_bsl = price > prev_macro_high and df_ltf["Close"].iloc[-1] < prev_macro_high
     sweep_ssl = price < prev_macro_low and df_ltf["Close"].iloc[-1] > prev_macro_low
 
     avg_vol = df_ltf["Volume"].tail(20).mean()
-    fvg_multiplier = 2.5 if (df_ltf["Volume"].iloc[-2] > (avg_vol * 2.0) if avg_vol > 0 else False) else 1.0
+    fvg_multiplier = 2.0 if (df_ltf["Volume"].iloc[-2] > (avg_vol * 1.8) if avg_vol > 0 else False) else 1.0
     fvg_buy = df_ltf["Low"].iloc[-1] > df_ltf["High"].iloc[-3] and df_ltf["Close"].iloc[-2] > df_ltf["Open"].iloc[-2]
     fvg_sell = df_ltf["High"].iloc[-1] < df_ltf["Low"].iloc[-3] and df_ltf["Close"].iloc[-2] < df_ltf["Open"].iloc[-2]
 
-    # Matrix Engine Score Computation
-    buy_score = 30 if htf_bias == "BULLISH" else 0
-    sell_score = 30 if htf_bias == "BEARISH" else 0
+    # Dynamic Optimization Matrix Integration (Summing Weights)
+    buy_score = 20 if htf_bias == "BULLISH" else 0
+    sell_score = 20 if htf_bias == "BEARISH" else 0
+    
+    buy_score += structure_score_buy
+    sell_score += structure_score_sell
+
     if sweep_ssl: buy_score += 25
     if sweep_bsl: sell_score += 25
     if fvg_buy: buy_score += int(15 * fvg_multiplier)
     if fvg_sell: sell_score += int(15 * fvg_multiplier)
 
-    midpoint = recent_low + ((recent_high - recent_low) * 0.5)
-    if price > midpoint: buy_score = int(buy_score * 0.5)
-    if price < midpoint: sell_score = int(sell_score * 0.5)
+    # Apply pure structural blocks (No buying at premium ceiling, no selling at discount floor)
+    if equilibrium_discount and ote_buy_zone:
+        buy_score += 20  # Perfect custom Fibonacci OTE confluence
+    elif equilibrium_premium:
+        buy_score = int(buy_score * 0.4)  # Penalize high risk execution entries
+
+    if equilibrium_premium and ote_sell_zone:
+        sell_score += 20
+    elif equilibrium_discount:
+        sell_score = int(sell_score * 0.4)
+
+    # Scale total calculated weight via current Killzone operational multiplier
+    buy_score = int(buy_score * killzone_multiplier)
+    sell_score = int(sell_score * killzone_multiplier)
 
     signal = "NEUTRAL"
     confidence = max(buy_score, sell_score)
 
-    if buy_score >= 65 and htf_bias == "BULLISH": signal = "STRONG BUY"
-    elif buy_score >= 45 and htf_bias == "BULLISH": signal = "BUY RE-ENTRY"
-    elif sell_score >= 65 and htf_bias == "BEARISH": signal = "STRONG SELL"
-    elif sell_score >= 45 and htf_bias == "BEARISH": signal = "SELL RE-ENTRY"
+    if buy_score >= 70 and htf_bias == "BULLISH": signal = "STRONG ICT BUY"
+    elif buy_score >= 50: signal = "ICT OTE BUY"
+    elif sell_score >= 70 and htf_bias == "BEARISH": signal = "STRONG ICT SELL"
+    elif sell_score >= 50: signal = "ICT OTE SELL"
 
     pip_mult = 0.01 if "JPY" in pair.upper() else (0.10 if "XAU" in pair.upper() else 0.0001)
     
@@ -243,23 +312,20 @@ def compute_analytics_matrix(pair, df_ltf):
     else:
         tp, sl = price, price
 
+    pricing_framework_string = "OTE Discount" if equilibrium_discount else "OTE Premium"
+    
     return {
         "signal": signal, "confidence": min(round(confidence, 1), 100), "entry": round(price, 5),
         "tp": round(tp, 5), "sl": round(sl, 5), "pips": round(abs(tp - price) / pip_mult, 1) if signal != "NEUTRAL" else 0,
-        "rsi": math_rsi(df_ltf), "structure": f"Bias: {htf_bias} | Vol Accel: {fvg_multiplier}x",
-        "buy_score": min(buy_score, 100), "sell_score": min(sell_score, 100), "session": system_session(),
+        "rsi": math_rsi(df_ltf), "structure": f"{smc_structure} | Matrix: {pricing_framework_string}",
+        "buy_score": min(buy_score, 100), "sell_score": min(sell_score, 100), "session": session_label,
         "timestamp": datetime.now().strftime("%H:%M:%S"), "recent_high": round(recent_high, 5), "recent_low": round(recent_low, 5)
     }
 
 @st.fragment(run_every=4)
 def background_telemetry_pipeline():
-    """
-    PERFORMANCE ENGINE UPGRADE: This is the single control loop that pulls market data.
-    It executes sequentially across assets, updates global memory, and prevents visual lockups.
-    """
     symbols_to_fetch = list(ticker_mapping.values())
     try:
-        # High-Speed Batch Fetch in one network call
         raw_data = yf.download(symbols_to_fetch, period="10d", interval="15m", progress=False, group_by="ticker")
         
         for pair, ticker in ticker_mapping.items():
@@ -277,7 +343,6 @@ def background_telemetry_pipeline():
                 })
                 
                 if not df_ltf.empty:
-                    # Update cache values directly
                     st.session_state.global_market_registry[pair]["df_ltf_slice"] = df_ltf.tail(45)
                     st.session_state.global_market_registry[pair]["metrics"] = compute_analytics_matrix(pair, df_ltf)
                     
@@ -285,7 +350,6 @@ def background_telemetry_pipeline():
     except Exception:
         pass
 
-# Execute the isolated background collector immediately
 background_telemetry_pipeline()
 
 # =====================================================
@@ -295,9 +359,6 @@ selected_pair = st.sidebar.selectbox("Active Stream Target", pairs)
 
 @st.fragment(run_every=2)
 def render_live_dashboard(pair):
-    """
-    PURE PRESENTATION LAYER: Pulls directly from memory. Zero analytics calculations performed.
-    """
     cached_node = st.session_state.global_market_registry[pair]
     plot_df = cached_node["df_ltf_slice"]
     result = cached_node["metrics"]
@@ -306,7 +367,6 @@ def render_live_dashboard(pair):
         st.info("Synchronizing data matrix structures with the core engine stream...")
         return
 
-    # Super-fast Plotly assembly
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
         x=plot_df["time"], open=plot_df["Open"], high=plot_df["High"], low=plot_df["Low"], close=plot_df["Close"], name=pair,
@@ -333,10 +393,10 @@ def render_live_dashboard(pair):
     color_hex = "#10B981" if "BUY" in result["signal"] else ("#EF4444" if "SELL" in result["signal"] else "#94A3B8")
     
     c1, c2, c3, c4 = st.columns(4)
-    with c1: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Validated Matrix Vector</div><div style='font-size:1.1rem; font-weight:700; color:{color_hex};'>{result['signal']}</div></div>", unsafe_allow_html=True)
+    with c1: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Validated Matrix Vector</div><div style='font-size:1.0rem; font-weight:700; color:{color_hex};'>{result['signal']}</div></div>", unsafe_allow_html=True)
     with c2: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Confluence Confidence</div><div style='font-size:1.4rem; font-weight:700; color:#00F0FF; font-family:JetBrains Mono;'>{result['confidence']}%</div></div>", unsafe_allow_html=True)
     with c3: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Target Proportional Yield</div><div style='font-size:1.4rem; font-weight:700; color:#F59E0B; font-family:JetBrains Mono;'>{result['pips']} Pips</div></div>", unsafe_allow_html=True)
-    with c4: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Active Global Session</div><div style='font-size:0.85rem; font-weight:600; color:#94A3B8; margin-top:4px;'>{result['session']}</div></div>", unsafe_allow_html=True)
+    with c4: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Active Algorithmic Session</div><div style='font-size:0.75rem; font-weight:600; color:#94A3B8; margin-top:4px;'>{result['session']}</div></div>", unsafe_allow_html=True)
     
     st.markdown("<div style='margin-top:15px;'></div>", unsafe_allow_html=True)
     sc1, sc2 = st.columns(2)
@@ -350,9 +410,6 @@ def render_live_dashboard(pair):
 
 @st.fragment(run_every=4)
 def render_scanner_block():
-    """
-    Instantaneous table rendering from in-memory caches. Zero HTTP overhead.
-    """
     st.markdown('<div class="premium-card" style="height: 100%;">', unsafe_allow_html=True)
     st.markdown("<b style='font-size:1.1rem; color:#FFFFFF; display:block; margin-bottom:15px;'>📡 CROSS-PORTFOLIO MONITOR ARRAY</b>", unsafe_allow_html=True)
     
@@ -361,7 +418,7 @@ def render_scanner_block():
         res = st.session_state.global_market_registry[p]["metrics"]
         scan_results.append([p, res["signal"], f"{res['confidence']}%", res["structure"], res["pips"], res["session"]])
             
-    scanner_df = pd.DataFrame(scan_results, columns=["Asset Pair", "Vector State", "Confidence", "SMC Structural Diagnostics", "Risk Proportional Range", "Session Flow"])
+    scanner_df = pd.DataFrame(scan_results, columns=["Asset Pair", "Vector State", "Confidence", "SMC/ICT Diagnostics", "Risk Proportional Range", "Session Flow"])
     st.dataframe(scanner_df, use_container_width=True, hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
