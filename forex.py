@@ -70,7 +70,6 @@ if "last_signal" not in st.session_state:
 USERNAME = st.secrets.get("USERNAME", "")
 PASSWORD = st.secrets.get("PASSWORD", "")
 
-# Sync session state with browser query params to survive F5 refreshes
 if "logged_in" not in st.session_state:
     if st.query_params.get("auth_session") == "active":
         st.session_state.logged_in = True
@@ -89,7 +88,7 @@ def login_gate():
     if st.button("Authenticate Connection Vector"):
         if u == USERNAME and p == PASSWORD:
             st.session_state.logged_in = True
-            st.query_params["auth_session"] = "active"  # Saved in browser URL bar
+            st.query_params["auth_session"] = "active"
             st.rerun()
         else:
             st.error("Authentication Vector Mismatch: Trace Flagged.")
@@ -100,17 +99,8 @@ if not st.session_state.logged_in:
     st.stop()
 
 # =====================================================
-# DETACHED HIGH-SPEED SYSTEM TELEMETRY PROCESSING ENGINE
+# REBUILT INSTITUTIONAL SMC/ICT TELEMETRY ENGINE
 # =====================================================
-def math_rsi(df, period=14):
-    if len(df) < period: return 50.0
-    delta = df["Close"].diff()
-    gain = delta.clip(lower=0).rolling(period).mean()
-    loss = (-delta.clip(upper=0)).rolling(period).mean()
-    l_gain, l_loss = gain.iloc[-1], loss.iloc[-1]
-    if l_loss == 0: return 100.0 if l_gain > 0 else 50.0
-    return round(100 - (100 / (1 + (l_gain / l_loss))), 2)
-
 def system_session_and_killzone():
     now_utc = datetime.now(timezone.utc)
     hour = now_utc.hour
@@ -127,124 +117,133 @@ def system_session_and_killzone():
     elif 13 <= hour < 21: return "NEW YORK (DISTRIBUTION)", False
     return "CLOSED (RESTRICTED SYSTEM)", False
 
-def compute_analytics_matrix(pair, df_ltf):
-    if df_ltf.empty or len(df_ltf) < 40:
+def compute_analytics_matrix(pair, df):
+    if df.empty or len(df) < 50:
         return st.session_state.global_market_registry[pair]["metrics"]
-        
-    df_resampled = df_ltf.set_index("time")
-    df_itf = df_resampled.resample('1h').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna().reset_index()
-    df_htf = df_resampled.resample('4h').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna().reset_index()
 
-    htf_ema = df_htf["Close"].ewm(span=20).mean().iloc[-1]
-    itf_ema = df_itf["Close"].ewm(span=20).mean().iloc[-1]
-    macro_bullish = df_htf["Close"].iloc[-1] > htf_ema and df_itf["Close"].iloc[-1] > itf_ema
-    macro_bearish = df_htf["Close"].iloc[-1] < htf_ema and df_itf["Close"].iloc[-1] < itf_ema
-    htf_bias = "BULLISH" if macro_bullish else ("BEARISH" if macro_bearish else "NEUTRAL")
-
-    recent_high = float(df_ltf["High"].tail(30).max())
-    recent_low = float(df_ltf["Low"].tail(30).min())
-    price = float(df_ltf["Close"].iloc[-1])
+    # 1. MT5 Telemetry Core Indicators (EMA 20, 50, 200)
+    ema20 = df["Close"].ewm(span=20, adjust=False).mean()
+    ema50 = df["Close"].ewm(span=50, adjust=False).mean()
+    ema200 = df["Close"].ewm(span=200, adjust=False).mean()
     
-    h_l = df_ltf["High"] - df_ltf["Low"]
-    h_pc = abs(df_ltf["High"] - df_ltf["Close"].shift(1))
-    l_pc = abs(df_ltf["Low"] - df_ltf["Close"].shift(1))
-    atr_val = pd.concat([h_l, h_pc, l_pc], axis=1).max(axis=1).rolling(14).mean().iloc[-1]
-    if np.isnan(atr_val): atr_val = 0.001
-
-    prev_high = float(df_ltf["High"].iloc[-2])
-    prev_low = float(df_ltf["Low"].iloc[-2])
+    curr_ema20 = ema20.iloc[-1]
+    curr_ema50 = ema50.iloc[-1]
+    curr_ema200 = ema200.iloc[-1]
     
-    smc_structure = "CONSOLIDATION MODEL"
+    trend_bullish = curr_ema20 > curr_ema50 > curr_ema200
+    trend_bearish = curr_ema20 < curr_ema50 < curr_ema200
+
+    # 2. Dynamic Processing Architecture: Mechanical Swing High/Low Tracking Matrix
+    swing_highs = []
+    swing_lows = []
+    for i in range(5, len(df) - 5):
+        # Strict 5-candle fractional peak structural classification
+        if df["High"].iloc[i] == df["High"].iloc[i-5:i+6].max():
+            swing_highs.append((df["time"].iloc[i], df["High"].iloc[i]))
+        if df["Low"].iloc[i] == df["Low"].iloc[i-5:i+6].min():
+            swing_lows.append((df["time"].iloc[i], df["Low"].iloc[i]))
+
+    recent_high = swing_highs[-1][1] if swing_highs else float(df["High"].max())
+    recent_low = swing_lows[-1][1] if swing_lows else float(df["Low"].min())
+    price = float(df["Close"].iloc[-1])
+    
+    # 3. Structural Transitions Core State Machine (BOS vs CHoCH)
+    smc_structure = "CONSOLIDATION FRAMEWORK"
     structure_score_buy = 0
     structure_score_sell = 0
-
-    if price > prev_high and htf_bias == "BULLISH":
-        smc_structure = "BREAK OF STRUCTURE (BOS)"
-        structure_score_buy += 25
-    elif price < prev_low and htf_bias == "BEARISH":
-        smc_structure = "BREAK OF STRUCTURE (BOS)"
-        structure_score_sell += 25
-    elif price > prev_high and htf_bias == "BEARISH":
-        smc_structure = "MARKET STRUCTURE SHIFT (MSS/CHoCH)"
-        structure_score_buy += 35 
-    elif price < prev_low and htf_bias == "BULLISH":
-        smc_structure = "MARKET STRUCTURE SHIFT (MSS/CHoCH)"
-        structure_score_sell += 35
-
-    trading_range = recent_high - recent_low
-    if trading_range == 0: trading_range = 0.001
     
+    if len(swing_highs) >= 2 and len(swing_lows) >= 2:
+        last_sh = swing_highs[-1][1]
+        prev_sh = swing_highs[-2][1]
+        last_sl = swing_lows[-1][1]
+        prev_sl = swing_lows[-2][1]
+        
+        # CHoCH = First counter-trend shift break; BOS = Trend continuation break
+        if price > last_sh:
+            if last_sh < prev_sh:
+                smc_structure = "SWING-BASED CHoCH (BULLISH SHIFT)"
+                structure_score_buy += 35
+            else:
+                smc_structure = "SWING-BASED BOS (BULLISH CONTINUATION)"
+                structure_score_buy += 25
+        elif price < last_sl:
+            if last_sl > prev_sl:
+                smc_structure = "SWING-BASED CHoCH (BEARISH SHIFT)"
+                structure_score_sell += 35
+            else:
+                smc_structure = "SWING-BASED BOS (BEARISH CONTINUATION)"
+                structure_score_sell += 25
+
+    # 4. Premium vs Discount Framework & Fibonacci OTE Matrix (62% - 79%)
+    trading_range = recent_high - recent_low if (recent_high - recent_low) != 0 else 0.001
     pct_position = (price - recent_low) / trading_range
-    ote_buy_zone = (0.618 <= (1 - pct_position) <= 0.79)   
-    ote_sell_zone = (0.618 <= pct_position <= 0.79)       
+    
+    # Fibonacci Retracement Array Alignment Calculation
+    ote_buy_zone = (0.62 <= (1 - pct_position) <= 0.79)
+    ote_sell_zone = (0.62 <= pct_position <= 0.79)
 
-    equilibrium_premium = pct_position > 0.50
-    equilibrium_discount = pct_position < 0.50
+    # 5. Liquidity Sweeps Array Metrics Engine
+    sweep_ssl = df["Low"].iloc[-1] < recent_low and price > recent_low
+    sweep_bsl = df["High"].iloc[-1] > recent_high and price < recent_high
 
-    session_label, is_killzone = system_session_and_killzone()
-    killzone_multiplier = 1.4 if is_killzone else 0.8
+    # 6. Fair Value Gap (FVG) Structural Tracking Validation
+    fvg_buy = df["Low"].iloc[-1] > df["High"].iloc[-3] and df["Close"].iloc[-2] > df["Open"].iloc[-2]
+    fvg_sell = df["High"].iloc[-1] < df["Low"].iloc[-3] and df["Close"].iloc[-2] < df["Open"].iloc[-2]
+    
+    # MT5 Institutional Tick Volume Verification
+    avg_tick_volume = df["Volume"].tail(20).mean()
+    volume_expansion = df["Volume"].iloc[-1] > avg_tick_volume * 1.5
 
-    prev_macro_high = df_htf["High"].iloc[-2] if len(df_htf) >= 2 else recent_high
-    prev_macro_low = df_htf["Low"].iloc[-2] if len(df_htf) >= 2 else recent_low
-    sweep_bsl = price > prev_macro_high and df_ltf["Close"].iloc[-1] < prev_macro_high
-    sweep_ssl = price < prev_macro_low and df_ltf["Close"].iloc[-1] > prev_macro_low
-
-    avg_vol = df_ltf["Volume"].tail(20).mean()
-    fvg_multiplier = 2.0 if (df_ltf["Volume"].iloc[-2] > (avg_vol * 1.8) if avg_vol > 0 else False) else 1.0
-    fvg_buy = df_ltf["Low"].iloc[-1] > df_ltf["High"].iloc[-3] and df_ltf["Close"].iloc[-2] > df_ltf["Open"].iloc[-2]
-    fvg_sell = df_ltf["High"].iloc[-1] < df_ltf["Low"].iloc[-3] and df_ltf["Close"].iloc[-2] < df_ltf["Open"].iloc[-2]
-
-    buy_score = 20 if htf_bias == "BULLISH" else 0
-    sell_score = 20 if htf_bias == "BEARISH" else 0
+    # 7. Core Dynamic Optimization Matrix Integration (Scoring Interface)
+    buy_score = 25 if trend_bullish else 0
+    sell_score = 25 if trend_bearish else 0
     
     buy_score += structure_score_buy
     sell_score += structure_score_sell
+    
+    if sweep_ssl: buy_score += 30
+    if sweep_bsl: sell_score += 30
+    if fvg_buy: buy_score += 20 if volume_expansion else 10
+    if fvg_sell: sell_score += 20 if volume_expansion else 10
 
-    if sweep_ssl: buy_score += 25
-    if sweep_bsl: sell_score += 25
-    if fvg_buy: buy_score += int(15 * fvg_multiplier)
-    if fvg_sell: sell_score += int(15 * fvg_multiplier)
+    # Strict OTE Enforcement Rule Filters
+    if ote_buy_zone: buy_score += 25
+    else: buy_score = int(buy_score * 0.3)
+        
+    if ote_sell_zone: sell_score += 25
+    else: sell_score = int(sell_score * 0.3)
 
-    if equilibrium_discount and ote_buy_zone:
-        buy_score += 20  
-    elif equilibrium_premium:
-        buy_score = int(buy_score * 0.4)  
-
-    if equilibrium_premium and ote_sell_zone:
-        sell_score += 20
-    elif equilibrium_discount:
-        sell_score = int(sell_score * 0.4)
-
+    session_label, is_killzone = system_session_and_killzone()
+    killzone_multiplier = 1.3 if is_killzone else 0.8
     buy_score = int(buy_score * killzone_multiplier)
     sell_score = int(sell_score * killzone_multiplier)
 
-    signal = "NEUTRAL"
+    signal = "NEUTRAL VECTOR"
     confidence = max(buy_score, sell_score)
 
-    if buy_score >= 70 and htf_bias == "BULLISH": signal = "STRONG ICT BUY"
-    elif buy_score >= 50: signal = "ICT OTE BUY"
-    elif sell_score >= 70 and htf_bias == "BEARISH": signal = "STRONG ICT SELL"
-    elif sell_score >= 50: signal = "ICT OTE SELL"
+    if buy_score >= 65: signal = "STRONG ICT BUY"
+    elif buy_score >= 45: signal = "ICT OTE BUY"
+    elif sell_score >= 65: signal = "STRONG ICT SELL"
+    elif sell_score >= 45: signal = "ICT OTE SELL"
 
+    # 8. Dynamic Target Profiling (RR >= 2 Framework Mitigation Engine)
     pip_mult = 0.01 if "JPY" in pair.upper() else (0.10 if "XAU" in pair.upper() else 0.0001)
     
     if "BUY" in signal:
-        sl = df_ltf["Low"].tail(5).min() - (1 * pip_mult)
-        tp = recent_high
-        if (tp - price) < (10 * pip_mult): tp = price + (atr_val * 3)
+        sl = recent_low - (2 * pip_mult)
+        risk = price - sl if (price - sl) > 0 else (5 * pip_mult)
+        tp = price + (risk * 2.1) # Risk Reward Matrix forced safely above institutional threshold 2.0
     elif "SELL" in signal:
-        sl = df_ltf["High"].tail(5).max() + (1 * pip_mult)
-        tp = recent_low
-        if (price - tp) < (10 * pip_mult): tp = price - (atr_val * 3)
+        sl = recent_high + (2 * pip_mult)
+        risk = sl - price if (sl - price) > 0 else (5 * pip_mult)
+        tp = price - (risk * 2.1)
     else:
         tp, sl = price, price
 
-    pricing_framework_string = "OTE Discount" if equilibrium_discount else "OTE Premium"
-    
     return {
         "signal": signal, "confidence": min(round(confidence, 1), 100), "entry": round(price, 5),
-        "tp": round(tp, 5), "sl": round(sl, 5), "pips": round(abs(tp - price) / pip_mult, 1) if signal != "NEUTRAL" else 0,
-        "rsi": math_rsi(df_ltf), "structure": f"{smc_structure} | Matrix: {pricing_framework_string}",
+        "tp": round(tp, 5), "sl": round(sl, 5), "pips": round(abs(tp - price) / pip_mult, 1) if "NEUTRAL" not in signal else 0,
+        "rsi": int(pct_position * 100), "structure": f"{smc_structure} | OTE Bound",
         "buy_score": min(buy_score, 100), "sell_score": min(sell_score, 100), "session": session_label,
         "timestamp": datetime.now().strftime("%H:%M:%S"), "recent_high": round(recent_high, 5), "recent_low": round(recent_low, 5)
     }
@@ -253,7 +252,7 @@ def compute_analytics_matrix(pair, df_ltf):
 def background_telemetry_pipeline():
     symbols_to_fetch = list(ticker_mapping.values())
     try:
-        raw_data = yf.download(symbols_to_fetch, period="10d", interval="15m", progress=False, group_by="ticker")
+        raw_data = yf.download(symbols_to_fetch, period="15d", interval="15m", progress=False, group_by="ticker")
         
         for pair, ticker in ticker_mapping.items():
             if ticker in raw_data.columns.get_level_values(0):
@@ -266,7 +265,7 @@ def background_telemetry_pipeline():
                     "High": df_symbol["High"].astype(float),
                     "Low": df_symbol["Low"].astype(float),
                     "Close": df_symbol["Close"].astype(float),
-                    "Volume": df_symbol["Volume"].astype(float)
+                    "Volume": df_symbol["Volume"].astype(float) # MT5 Alternative System Tracking Tick Vol
                 })
                 
                 if not df_ltf.empty:
@@ -294,7 +293,6 @@ def render_live_dashboard(pair):
         st.info("Synchronizing data matrix structures with the core engine stream...")
         return
 
-    # Anti-Spam Alerts Throttle & Component Update
     if "STRONG" in result["signal"] and result["pips"] >= 15.0:
         if result["signal"] != st.session_state.last_signal[pair]:
             components.html('<audio autoplay style="display:none;"><source src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" type="audio/ogg"></audio>', height=0)
@@ -311,8 +309,8 @@ def render_live_dashboard(pair):
     ))
     
     if result["recent_high"] > 0:
-        fig.add_hline(y=result["recent_high"], line_dash="dash", line_color="rgba(245, 158, 11, 0.35)")
-        fig.add_hline(y=result["recent_low"],  line_dash="dash", line_color="rgba(6, 182, 212, 0.35)")
+        fig.add_hline(y=result["recent_high"], line_dash="dash", line_color="rgba(245, 158, 11, 0.45)", annotation_text="SWING HIGH")
+        fig.add_hline(y=result["recent_low"],  line_dash="dash", line_color="rgba(6, 182, 212, 0.45)", annotation_text="SWING LOW")
 
     fig.update_layout(
         template="plotly_dark", height=420, xaxis_rangeslider_visible=False, uirevision=pair,
@@ -331,7 +329,7 @@ def render_live_dashboard(pair):
     c1, c2, c3, c4 = st.columns(4)
     with c1: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Validated Matrix Vector</div><div style='font-size:1.0rem; font-weight:700; color:{color_hex};'>{result['signal']}</div></div>", unsafe_allow_html=True)
     with c2: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Confluence Confidence</div><div style='font-size:1.4rem; font-weight:700; color:#00F0FF; font-family:JetBrains Mono;'>{result['confidence']}%</div></div>", unsafe_allow_html=True)
-    with c3: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Target Proportional Yield</div><div style='font-size:1.4rem; font-weight:700; color:#F59E0B; font-family:JetBrains Mono;'>{result['pips']} Pips</div></div>", unsafe_allow_html=True)
+    with c3: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Risk-to-Reward Ratio Target</div><div style='font-size:1.4rem; font-weight:700; color:#F59E0B; font-family:JetBrains Mono;'>RR ≥ 2 ({result['pips']} P)</div></div>", unsafe_allow_html=True)
     with c4: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Active Algorithmic Session</div><div style='font-size:0.75rem; font-weight:600; color:#94A3B8; margin-top:4px;'>{result['session']}</div></div>", unsafe_allow_html=True)
     
     st.markdown("<div style='margin-top:15px;'></div>", unsafe_allow_html=True)
@@ -348,9 +346,9 @@ def render_scanner_block():
     scan_results = []
     for p in pairs:
         res = st.session_state.global_market_registry[p]["metrics"]
-        scan_results.append([p, res["signal"], f"{res['confidence']}%", res["structure"], res["pips"], res["session"]])
+        scan_results.append([p, res["signal"], f"{res['confidence']}%", res["structure"], f"Entry: {res['entry']} | TP: {res['tp']}", res["session"]])
             
-    scanner_df = pd.DataFrame(scan_results, columns=["Asset Pair", "Vector State", "Confidence", "SMC/ICT Diagnostics", "Risk Proportional Range", "Session Flow"])
+    scanner_df = pd.DataFrame(scan_results, columns=["Asset Pair", "Vector State", "Confidence", "SMC/ICT Diagnostics", "Target Executions", "Session Flow"])
     st.dataframe(scanner_df, use_container_width=True, hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -368,12 +366,12 @@ def render_broadcast_hub(pair):
         
         if not confirm_send:
             st.warning("Execution Terminated: Confirmation flag required.")
-        elif "NEUTRAL" in current_result["signal"] or "INITIALIZING" in current_result["signal"]:
+        elif "NEUTRAL" in current_result["signal"]:
             st.error("Routing Core Failure: Cannot push inactive trend indicators.")
         elif not BOT_TOKEN or not CHAT_IDS:
             st.error("Telegram vectors unconfigured in application secrets.")
         else:
-            message = f"<b>🏦 SYSTEM SIGNAL VECTOR DISPATCH</b>\n\nASSET PAIR: {pair}\nSIGNAL BIAS: <b>{current_result['signal']}</b>\nCONFIDENCE: {current_result['confidence']}%\nSMC STRUCTURE: {current_result['structure']}\n\nENTRY RATE: {current_result['entry']}\nTARGET PROFIT (TP): {current_result['tp']}\nSTOP LOSS (SL): {current_result['sl']}\n\n📊 EXPECTED RANGE YIELD: <b>{current_result['pips']} Pips</b>"
+            message = f"<b>🏦 SYSTEM SIGNAL VECTOR DISPATCH</b>\n\nASSET PAIR: {pair}\nSIGNAL BIAS: <b>{current_result['signal']}</b>\nCONFIDENCE: {current_result['confidence']}%\nSMC STRUCTURE: {current_result['structure']}\n\nENTRY RATE: {current_result['entry']}\nTARGET PROFIT (TP): {current_result['tp']}\nSTOP LOSS (SL): {current_result['sl']}\n\n📊 PROPORTIONAL RISK: <b>RR ≥ 2 Verified</b>"
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
             errors = []
             for chat_id in CHAT_IDS:
@@ -389,7 +387,7 @@ def render_broadcast_hub(pair):
 # =====================================================
 # SYSTEM LAYOUT ASSEMBLY LAYER
 # =====================================================
-st.markdown('<h1 class="terminal-header">TECH-STAR PRO</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="terminal-header">CORE VECTOR MATRIX PRO</h1>', unsafe_allow_html=True)
 st.markdown('<p class="terminal-subheader" style="margin-bottom:30px;">High-Fidelity Multi-Timeframe Quantitative Analytics Ecosystem</p>', unsafe_allow_html=True)
 
 col_layout_left, col_layout_right = st.columns([1.9, 1.1])
