@@ -147,6 +147,7 @@ if "global_market_registry" not in st.session_state:
                 "signal": "INITIALIZING MATRIX", "confidence": 0, "entry": 0, "tp": 0, "sl": 0,
                 "pips": 0, "rsi": 50, "structure": "ESTABLISHING CORE LINK", "buy_score": 0, "sell_score": 0,
                 "session": "UNKNOWN", "timestamp": "CALIBRATING FLOW", "recent_high": 0, "recent_low": 0,
+                # Safe fallback definitions initialized here to eliminate race-condition KeyErrors
                 "bias_15m": "NEUTRAL", "bias_1h": "NEUTRAL", "bias_4h": "NEUTRAL"
             }
         } for p in pairs
@@ -452,13 +453,17 @@ def render_bias_matrix_block():
     bias_results = []
     for p in pairs:
         res = st.session_state.global_market_registry[p]["metrics"]
-        # Determine cross-alignment profile state
-        if res["bias_15m"] == res["bias_1h"] == res["bias_4h"]:
+        
+        # Guard clause handling the initial default fallback strings smoothly
+        if "NEUTRAL" in [res.get("bias_15m"), res.get("bias_1h"), res.get("bias_4h")]:
+            alignment = "⏳ SYNCING CORES..."
+        elif res["bias_15m"] == res["bias_1h"] == res["bias_4h"]:
             alignment = "⚡ FULL CONVERGENCE"
         elif res["bias_15m"] == res["bias_1h"]:
             alignment = "⚠️ LOCAL ALIGNMENT"
         else:
             alignment = "❌ MIXED FLOWS"
+            
         bias_results.append([p, res["bias_15m"], res["bias_1h"], res["bias_4h"], alignment])
         
     bias_df = pd.DataFrame(bias_results, columns=["Asset Pair", "15M Trend", "1H Trend", "4H Trend", "Convergence Profile"])
