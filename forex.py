@@ -128,7 +128,7 @@ def send_telegram(message: str):
     return (len(errors) == 0), "; ".join(errors)
 
 # =====================================================
-# CONFIG & DATA INGESTION — Flattened & Sanitized
+# CONFIG & DATA INGESTION — Flattened & Squeezed
 # =====================================================
 pairs = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "XAUUSD"]
 selected_pair = st.sidebar.selectbox("Select Active Vector Pair", pairs)
@@ -151,7 +151,6 @@ def get_data(symbol, bars=300, period="7d", interval="15m"):
         period = "7d"
 
     try:
-        # Download data directly
         df = yf.download(ticker, period=period, interval=interval, progress=False)
     except Exception:
         return pd.DataFrame()
@@ -159,19 +158,16 @@ def get_data(symbol, bars=300, period="7d", interval="15m"):
     if df is None or df.empty:
         return pd.DataFrame()
 
-    # Step 1: Force flatten column headers if they are a MultiIndex combo
+    # Step 1: Handle MultiIndex columns by extracting the base level explicitly
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
-    # Step 2: Extract 1D arrays reliably to completely circumvent the dictionary 2D error
+    # Step 2: Ensure strictly 1D arrays using .squeeze() to drop accidental dimensions
     def to_flat_1d(dataframe, target_col):
         if target_col not in dataframe.columns:
             return np.zeros(len(dataframe))
-        extracted = dataframe[target_col]
-        # Drop extra dimensions if any remaining nested frames exist
-        if hasattr(extracted, "ndim") and extracted.ndim > 1:
-            return np.asarray(extracted.iloc[:, 0]).flatten()
-        return np.asarray(extracted).flatten()
+        series = dataframe[target_col].squeeze()
+        return np.asarray(series).flatten()
 
     try:
         opens = to_flat_1d(df, "Open")
@@ -180,17 +176,12 @@ def get_data(symbol, bars=300, period="7d", interval="15m"):
         closes = to_flat_1d(df, "Close")
         volumes = to_flat_1d(df, "Volume")
         
-        # Determine time series column index or name
         df_reset = df.reset_index()
         time_col = "Datetime" if "Datetime" in df_reset.columns else "Date"
-        if time_col in df_reset.columns:
-            time_series = to_flat_1d(df_reset, time_col)
-        else:
-            time_series = np.asarray(df_reset.iloc[:, 0]).flatten()
+        time_series = to_flat_1d(df_reset, time_col)
     except Exception:
         return pd.DataFrame()
 
-    # Step 3: Construct a strictly clean 1-dimensional dictionary layout
     clean_df = pd.DataFrame({
         "time": time_series,
         "Open": opens.astype(float),
@@ -203,40 +194,36 @@ def get_data(symbol, bars=300, period="7d", interval="15m"):
     return clean_df.tail(int(bars)).reset_index(drop=True)
 
 # =====================================================
-# MATH & RE-ARCHITECTED ADVANCED SIGNAL ALGORITHMS
+# MATH & OPTIMIZED STRUCTURAL PIPELINE
 # =====================================================
 def calculate_swing_pivots(df: pd.DataFrame, left_bars: int = 5, right_bars: int = 5) -> pd.DataFrame:
     df = df.copy().reset_index(drop=True)
-    swing_high = np.full(len(df), np.nan)
-    swing_low  = np.full(len(df), np.nan)
-
-    for i in range(left_bars, len(df) - right_bars):
-        window_h = df["High"].iloc[i - left_bars: i + right_bars + 1]
-        window_l = df["Low"].iloc[i - left_bars: i + right_bars + 1]
-        if df["High"].iloc[i] == window_h.max():
-            swing_high[i] = df["High"].iloc[i]
-        if df["Low"].iloc[i] == window_l.min():
-            swing_low[i] = df["Low"].iloc[i]
-
-    df["Swing_High"] = swing_high
-    df["Swing_Low"]  = swing_low
+    
+    # Vectorized Rolling Window Optimization
+    roll_high = df["High"].rolling(window=left_bars + right_bars + 1, center=True).max()
+    roll_low = df["Low"].rolling(window=left_bars + right_bars + 1, center=True).min()
+    
+    df["Swing_High"] = np.where(df["High"] == roll_high, df["High"], np.nan)
+    df["Swing_Low"] = np.where(df["Low"] == roll_low, df["Low"], np.nan)
     return df
 
 def calculate_atr(df, period=14):
     if len(df) < period: return 0.001
-    tr = np.maximum(df["High"] - df["Low"], np.maximum(abs(df["High"] - df["Close"].shift()), abs(df["Low"] - df["Close"].shift())))
+    h_l = df["High"] - df["Low"]
+    h_pc = abs(df["High"] - df["Close"].shift(1))
+    l_pc = abs(df["Low"] - df["Close"].shift(1))
+    tr = pd.concat([h_l, h_pc, l_pc], axis=1).max(axis=1)
     atr = tr.rolling(period).mean().iloc[-1]
     return atr if not np.isnan(atr) else 0.001
 
 def rsi(df, period=14):
     if len(df) < period: return 50.0
     delta = df["Close"].diff()
-    gain  = delta.clip(lower=0).rolling(period).mean()
-    loss  = (-delta.clip(upper=0)).rolling(period).mean()
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = (-delta.clip(upper=0)).rolling(period).mean()
     last_gain = gain.iloc[-1]
     last_loss = loss.iloc[-1]
-    if last_loss == 0 and last_gain == 0: return 50.0
-    if last_loss == 0: return 100.0
+    if last_loss == 0: return 100.0 if last_gain > 0 else 50.0
     rs = last_gain / last_loss
     return round(100 - (100 / (1 + rs)), 2)
 
@@ -260,11 +247,10 @@ def is_trending(df, period=20, threshold=0.3):
 
 def detect_fvg(df, lookback=20):
     fvg_buy = fvg_sell = False
-    for i in range(2, min(lookback, len(df))):
-        if df["Low"].iloc[-i+1] > df["High"].iloc[-i-1]:
-            fvg_buy = True
-        if df["High"].iloc[-i+1] < df["Low"].iloc[-i-1]:
-            fvg_sell = True
+    limit = min(lookback, len(df) - 2)
+    for i in range(2, limit):
+        if df["Low"].iloc[-i+1] > df["High"].iloc[-i-1]: fvg_buy = True
+        if df["High"].iloc[-i+1] < df["Low"].iloc[-i-1]: fvg_sell = True
     return fvg_buy, fvg_sell
 
 def detect_choch(df, recent_high, recent_low):
@@ -278,22 +264,20 @@ def detect_choch(df, recent_high, recent_low):
 
 def detect_order_block(df):
     ob_bull = ob_bear = False
-    for i in range(3, min(20, len(df))):
+    limit = min(20, len(df) - 3)
+    for i in range(3, limit):
         candle = df.iloc[-i]
         next_two = df.iloc[-i+1:-i+3]
-        if candle["Close"] < candle["Open"]:
-            if all(next_two["Close"] > next_two["Open"]):
-                ob_bull = True
-        if candle["Close"] > candle["Open"]:
-            if all(next_two["Close"] < next_two["Open"]):
-                ob_bear = True
+        if candle["Close"] < candle["Open"] and all(next_two["Close"] > next_two["Open"]):
+            ob_bull = True
+        if candle["Close"] > candle["Open"] and all(next_two["Close"] < next_two["Open"]):
+            ob_bear = True
     return ob_bull, ob_bear
 
 def volume_spike(df, threshold=1.5):
     avg_vol = df["Volume"].tail(20).mean()
     last_vol = df["Volume"].iloc[-1]
-    if avg_vol == 0: return False
-    return last_vol > (avg_vol * threshold)
+    return last_vol > (avg_vol * threshold) if avg_vol > 0 else False
 
 def neutral_result():
     return {
@@ -318,41 +302,37 @@ def institutional_engine(df, pair):
         return neutral_result()
 
     current_time_utc = datetime.now(timezone.utc)
-    float_time       = current_time_utc.hour + (current_time_utc.minute / 60.0)
+    float_time = current_time_utc.hour + (current_time_utc.minute / 60.0)
     is_algo_killzone = (6.0 <= float_time <= 10.0) or (12.0 <= float_time <= 16.0)
 
     atr_val = calculate_atr(df)
 
-    # Multi-Timeframe Trend Stack (M30 Structural Filters)
+    # Structural M30 Filters
     df_m30 = get_data(pair, bars=100, period="7d", interval="30m")
     htf_bias = "NEUTRAL"
     if df_m30 is not None and not df_m30.empty and len(df_m30) >= 30:
         m30_ema20 = df_m30["Close"].ewm(span=20).mean().iloc[-1]
         m30_ema50 = df_m30["Close"].ewm(span=50).mean().iloc[-1]
-        if df_m30["Close"].iloc[-1] > m30_ema20 > m30_ema50:
-            htf_bias = "BULLISH"
-        elif df_m30["Close"].iloc[-1] < m30_ema20 < m30_ema50:
-            htf_bias = "BEARISH"
+        if df_m30["Close"].iloc[-1] > m30_ema20 > m30_ema50: htf_bias = "BULLISH"
+        elif df_m30["Close"].iloc[-1] < m30_ema20 < m30_ema50: htf_bias = "BEARISH"
 
-    df          = calculate_swing_pivots(df, left_bars=5, right_bars=5)
+    df = calculate_swing_pivots(df, left_bars=5, right_bars=5)
     valid_highs = df["Swing_High"].dropna()
-    valid_lows  = df["Swing_Low"].dropna()
+    valid_lows = df["Swing_Low"].dropna()
     recent_high = float(valid_highs.iloc[-1]) if not valid_highs.empty else float(df["High"].max())
-    recent_low  = float(valid_lows.iloc[-1])  if not valid_lows.empty  else float(df["Low"].min())
+    recent_low = float(valid_lows.iloc[-1]) if not valid_lows.empty else float(df["Low"].min())
 
-    # Premium / Discount Models
-    current_range  = recent_high - recent_low if (recent_high - recent_low) > 0 else 0.001
-    price          = float(df["Close"].iloc[-1])
-    midpoint       = recent_low + (current_range * 0.50)
+    current_range = recent_high - recent_low if (recent_high - recent_low) > 0 else 0.001
+    price = float(df["Close"].iloc[-1])
+    midpoint = recent_low + (current_range * 0.50)
 
-    sweep_buy = any(df["Low"].tail(6) < recent_low) and (df["Close"].iloc[-1] > recent_low)
-    sweep_sell = any(df["High"].tail(6) > recent_high) and (df["Close"].iloc[-1] < recent_high)
+    sweep_buy = any(df["Low"].tail(6) < recent_low) and (price > recent_low)
+    sweep_sell = any(df["High"].tail(6) > recent_high) and (price < recent_high)
 
     choch_bull, choch_bear = detect_choch(df, recent_high, recent_low)
     fvg_buy_present, fvg_sell_present = detect_fvg(df)
     ob_bullish, ob_bearish = detect_order_block(df)
 
-    # Matrix Point Evaluation Weighting
     buy_score, sell_score = 0, 0
     if htf_bias == "BULLISH": buy_score += 25
     if htf_bias == "BEARISH": sell_score += 25
@@ -368,14 +348,13 @@ def institutional_engine(df, pair):
         if htf_bias == "BULLISH": buy_score += 10
         if htf_bias == "BEARISH": sell_score += 10
 
-    # Soft Linear Matrix Discount Gradients
     discount_factor = 1.0 - max(0, (price - midpoint) / current_range) * 0.6
-    premium_factor  = 1.0 - max(0, (midpoint - price) / current_range) * 0.6
-    buy_score       = int(buy_score * discount_factor)
-    sell_score      = int(sell_score * premium_factor)
+    premium_factor = 1.0 - max(0, (midpoint - price) / current_range) * 0.6
+    buy_score = int(buy_score * discount_factor)
+    sell_score = int(sell_score * premium_factor)
 
     if not is_algo_killzone:
-        buy_score  = int(buy_score * 0.7)
+        buy_score = int(buy_score * 0.7)
         sell_score = int(sell_score * 0.7)
 
     signal = "NEUTRAL"
@@ -387,19 +366,16 @@ def institutional_engine(df, pair):
     elif sell_score >= 50 and "BUY" not in signal: signal = "SELL"
 
     entry = price
-    # Adaptive ATR Geometry for Target Scaling
     if "BUY" in signal:
-        sl  = entry - (atr_val * 1.5)
+        sl = entry - (atr_val * 1.5)
         tp1 = entry + (atr_val * 1.5 * 2.0)
-        tp  = min(recent_high, tp1)
-        if (tp - entry) < (10 * pip_multiplier):
-            tp = entry + (atr_val * 3.0)
+        tp = min(recent_high, tp1)
+        if (tp - entry) < (10 * pip_multiplier): tp = entry + (atr_val * 3.0)
     elif "SELL" in signal:
-        sl  = entry + (atr_val * 1.5)
+        sl = entry + (atr_val * 1.5)
         tp1 = entry - (atr_val * 1.5 * 2.0)
-        tp  = max(recent_low, tp1)
-        if (entry - tp) < (10 * pip_multiplier):
-            tp = entry - (atr_val * 3.0)
+        tp = max(recent_low, tp1)
+        if (entry - tp) < (10 * pip_multiplier): tp = entry - (atr_val * 3.0)
     else:
         tp, sl = entry, entry
 
@@ -460,7 +436,6 @@ def render_live_dashboard(pair):
 
     st.session_state.shared_prediction = result
 
-    # Advanced Chart Processing Matrix
     plot_df = calculate_swing_pivots(market_data, left_bars=5, right_bars=5)
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
@@ -480,7 +455,6 @@ def render_live_dashboard(pair):
     fig.update_yaxes(showgrid=True, gridcolor='#1E293B')
     st.plotly_chart(fig, use_container_width=True)
 
-    # Core Metric Mapping Interface
     st.markdown("### 🔍 Accumulation Metrics")
     sc1, sc2 = st.columns(2)
     sc1.markdown(f"<div style='background-color:#0F1626; padding:12px; border-radius:8px; border-left:4px solid #00E676;'>🟢 Bullish Engine Momentum: <b style='color:#00E676; font-family:JetBrains Mono;'>{result['buy_score']}/100</b></div>", unsafe_allow_html=True)
@@ -490,7 +464,7 @@ def render_live_dashboard(pair):
     
     color_hex = "#FFFFFF"
     if "BUY" in result["signal"]: color_hex = "#00E676"
-    elif "SELL" in result["signal"]: color_hex = "#FF1744"
+    elif "SELL" in signal: color_hex = "#FF1744"
         
     c1, c2, c3, c4 = st.columns(4)
     with c1: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Structural Vector</div><div style='font-size:1.5rem; font-weight:600; color:{color_hex};'>{result['signal']}</div></div>", unsafe_allow_html=True)
@@ -513,6 +487,26 @@ def render_scanner_block():
     st.dataframe(scanner_df, use_container_width=True, hide_index=True)
 
 # =====================================================
+# TELEGRAM LIVE DISPATCH FRAGMENT
+# =====================================================
+@st.fragment
+def render_broadcast_hub(pair):
+    st.subheader("📩 Broadcast Hub")
+    confirm_send = st.checkbox("Verify system structural rules execution criteria checklist verification pattern.", key="broadcast_check")
+    
+    if st.button("🚀TELEGRAM BROADCAST"):
+        current_result = st.session_state.shared_prediction
+        if not confirm_send:
+            st.warning("Execution Refused: Accept confirmation protocol parameters before network push.")
+        elif "NEUTRAL" in current_result["signal"]:
+            st.error("Execution Aborted: Algorithmic parameters require valid active trend metrics.")
+        else:
+            message = f"""🏦 <b>CORE STRUCTURAL SIGNAL SETUP</b>\n\nVECTOR PAIR: {pair}\nSIGNAL BIAS: <b>{current_result['signal']}</b>\nCONFIDENCE COEFFICIENT: {current_result['confidence']}%\nSMC STRUCTURE: {current_result['structure']}\n\nENTRY RATE: {current_result['entry']}\nTARGET PROFIT (TP): {current_result['tp']}\nSTOP LOSS (SL): {current_result['sl']}\n\n📊 EXPECTED RANGE YIELD: <b>{current_result['pips']} Pips</b>\nCeiling Liquidity Line: {current_result['recent_high']}\nFloor Liquidity Line: {current_result['recent_low']}\n\nRSI VALUE: {current_result['rsi']}\nSYSTEM TIME STAMP: {current_result['timestamp']}"""
+            ok, err = send_telegram(message)
+            if ok: st.success("✅ Configuration array deployed to configured channels.")
+            else: st.error(f"❌ Transmission exception: {err}")
+
+# =====================================================
 # SYSTEM BUILD LAYOUT ASSEMBLY
 # =====================================================
 st.markdown('<h1 class="terminal-header">TECH-STAR🚨</h1>', unsafe_allow_html=True)
@@ -529,24 +523,7 @@ with col_layout_right:
     render_scanner_block()
 
 st.markdown("---")
-current_result = st.session_state.shared_prediction
-
-# =====================================================
-# TELEGRAM DISPATCH FRAME
-# =====================================================
-st.subheader("📩 Broadcast Hub")
-confirm_send = st.checkbox("Verify system structural rules execution criteria checklist verification pattern.")
-
-if st.button("🚀TELEGRAM BROADCAST"):
-    if not confirm_send:
-        st.warning("Execution Refused: Accept confirmation protocol parameters before network push.")
-    elif "NEUTRAL" in current_result["signal"]:
-        st.error("Execution Aborted: Algorithmic parameters require valid active trend metrics.")
-    else:
-        message = f"""🏦 <b>CORE STRUCTURAL SIGNAL SETUP</b>\n\nVECTOR PAIR: {selected_pair}\nSIGNAL BIAS: <b>{current_result['signal']}</b>\nCONFIDENCE COEFFICIENT: {current_result['confidence']}%\nSMC STRUCTURE: {current_result['structure']}\n\nENTRY RATE: {current_result['entry']}\nTARGET PROFIT (TP): {current_result['tp']}\nSTOP LOSS (SL): {current_result['sl']}\n\n📊 EXPECTED RANGE YIELD: <b>{current_result['pips']} Pips</b>\nCeiling Liquidity Line: {current_result['recent_high']}\nFloor Liquidity Line: {current_result['recent_low']}\n\nRSI VALUE: {current_result['rsi']}\nSYSTEM TIME STAMP: {current_result['timestamp']}"""
-        ok, err = send_telegram(message)
-        if ok: st.success("✅ Configuration array deployed to configured channels.")
-        else: st.error(f"❌ Transmission exception: {err}")
+render_broadcast_hub(selected_pair)
 
 # =====================================================
 # INTEGRATED QUANTITATIVE TRADINGVIEW STREAM
