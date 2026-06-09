@@ -64,12 +64,12 @@ st.markdown("""
             margin-top: 0px;
         }
         
-        /* Overriding Custom Metrics Framework to prevent design drift */
-        div[data-testid="stMetricSimpleNormal"] {
+        /* Overriding Custom Metrics Framework */
+        div[data-testid="stMetric"] {
             background: rgba(15, 23, 42, 0.8) !important;
             border: 1px solid rgba(255, 255, 255, 0.04) !important;
             border-radius: 12px !important;
-            padding: 20px !important;
+            padding: 15px !important;
         }
         
         div[data-testid="stMetricLabel"] {
@@ -111,8 +111,8 @@ st.markdown("""
 # =====================================================
 # SECURE IDENTITY GATEWAY LAYER
 # =====================================================
-USERNAME = st.secrets.get("USERNAME", "")
-PASSWORD = st.secrets.get("PASSWORD", "")
+USERNAME = st.secrets.get("USERNAME", "admin")
+PASSWORD = st.secrets.get("PASSWORD", "matrix_pro_2026")
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -134,6 +134,7 @@ def login():
     if st.button("Authenticate Connection Vector"):
         if u == USERNAME and p == PASSWORD:
             st.session_state.logged_in = True
+            st.sidebar.success("Institutional Data Engaged")
             st.rerun()
         else:
             st.error("Authentication Vector Mismatch: Trace Flagged.")
@@ -147,7 +148,6 @@ if not st.session_state.logged_in:
 # DATA STREAMING INFRASTRUCTURE BACKBONE
 # =====================================================
 st.sidebar.markdown("<div style='padding: 10px 0px;'><b style='color:#00F0FF; font-size:1.1rem;'>📡 PIPELINE STATUS</b></div>", unsafe_allow_html=True)
-st.sidebar.success("Institutional Data Engaged")
 
 BOT_TOKEN = st.secrets.get("BOT_TOKEN", "")
 CHAT_IDS  = st.secrets.get("CHAT_IDS", [])
@@ -177,21 +177,29 @@ def fetch_ticker_backbone(symbol, period, interval):
     }
     ticker = mapping.get(symbol)
     try:
-        df = yf.download(ticker, period=period, interval=interval, progress=False)
-        if df is None or df.empty: return pd.DataFrame()
+        # Avoid MultiIndex column issues by forcing direct formatting
+        df = yf.download(ticker, period=period, interval=interval, progress=False, group_by='ticker')
+        if df is None or df.empty: 
+            return pd.DataFrame()
+        
+        # Handle structural flattening if MultiIndex occurs
         if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+            df.columns = df.columns.get_level_values(1)
+            
         df_res = df.reset_index()
         t_col = "Datetime" if "Datetime" in df_res.columns else "Date"
+        
+        # Explicit serialization to prevent object-squeezing failures
         return pd.DataFrame({
-            "time": df_res[t_col].squeeze(),
-            "Open": df_res["Open"].squeeze().astype(float),
-            "High": df_res["High"].squeeze().astype(float),
-            "Low": df_res["Low"].squeeze().astype(float),
-            "Close": df_res["Close"].squeeze().astype(float),
-            "Volume": df_res["Volume"].squeeze().astype(float)
+            "time": df_res[t_col],
+            "Open": df_res["Open"].astype(float),
+            "High": df_res["High"].astype(float),
+            "Low": df_res["Low"].astype(float),
+            "Close": df_res["Close"].astype(float),
+            "Volume": df_res["Volume"].astype(float) if "Volume" in df_res.columns else 0.0
         }).dropna().reset_index(drop=True)
-    except Exception:
+    except Exception as e:
+        st.sidebar.error(f"Stream Sync Error: {str(e)}")
         return pd.DataFrame()
 
 # =====================================================
@@ -231,6 +239,7 @@ def trading_session():
     return "CLOSED"
 
 def detect_true_liquidity_sweeps(df_ltf, df_htf):
+    if len(df_htf) < 2 or len(df_ltf) < 1: return False, False
     prev_macro_high = df_htf["High"].iloc[-2]
     prev_macro_low = df_htf["Low"].iloc[-2]
     current_high = df_ltf["High"].iloc[-1]
@@ -241,7 +250,7 @@ def detect_true_liquidity_sweeps(df_ltf, df_htf):
     return sweep_bsl, sweep_ssl
 
 def detect_volume_weighted_fvg(df):
-    if len(df) < 3: return False, False, 0
+    if len(df) < 3: return False, False, 1.0
     avg_vol = df["Volume"].tail(20).mean()
     trigger_vol = df["Volume"].iloc[-2]
     is_institutional_displacement = trigger_vol > (avg_vol * 2.0) if avg_vol > 0 else False
@@ -334,13 +343,13 @@ def predictive_matrix_engine(pair):
     return {
         "signal": signal, "confidence": min(round(confidence, 1), 100), "entry": round(entry, 5),
         "tp": round(tp, 5), "sl": round(sl, 5), "pips": pip_yield, "rsi": rsi_val,
-        "structure": f"HTF Confluence: {htf_bias} | Vol Displacement Factor: {vol_multiplier}x",
+        "structure": f"HTF Bias: {htf_bias} | Vol Factor: {vol_multiplier}x",
         "buy_score": min(buy_score, 100), "sell_score": min(sell_score, 100), "session": trading_session(),
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "recent_high": round(recent_high, 5), "recent_low": round(recent_low, 5)
     }
 
 # =====================================================
-# CACHED CROSS-PORTFOLIO CALCULATOR ASYNC SIMULATOR
+# CACHED CROSS-PORTFOLIO CALCULATOR
 # =====================================================
 @st.cache_data(ttl=10)
 def run_matrix_portfolio_scan(pairs_tuple):
@@ -356,7 +365,7 @@ def run_matrix_portfolio_scan(pairs_tuple):
 # =====================================================
 # MODULAR HIGH-PERFORMANCE RENDERING SEGMENTS
 # =====================================================
-@st.fragment(run_every=5)
+@st.experimental_fragment(run_every=5)
 def render_live_dashboard(pair):
     market_data = fetch_ticker_backbone(pair, period="5d", interval="15m")
     if market_data.empty:
@@ -391,40 +400,39 @@ def render_live_dashboard(pair):
     st.markdown(f"<div style='display:flex; justify-content:space-between; margin-bottom:15px;'><b style='font-size:1.1rem; color:#FFFFFF;'>🛰️ LIVE FLOW VECTOR: {pair}</b><span style='font-family:JetBrains Mono; color:#64748B;'>{result['timestamp']}</span></div>", unsafe_allow_html=True)
     st.plotly_chart(fig, use_container_width=True)
     
-    # Nested Custom Metrics Row Configurations
-    st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+    # Corrected HTML containment encapsulation for standard layout structure
+    st.markdown('</div>', unsafe_allow_html=True)
+    
     color_hex = "#10B981" if "BUY" in result["signal"] else ("#EF4444" if "SELL" in result["signal"] else "#94A3B8")
     
     c1, c2, c3, c4 = st.columns(4)
-    with c1: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Validated Matrix Vector</div><div style='font-size:1.1rem; font-weight:700; color:{color_hex};'>{result['signal']}</div></div>", unsafe_allow_html=True)
-    with c2: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Confluence Confidence</div><div style='font-size:1.4rem; font-weight:700; color:#00E5FF; font-family:JetBrains Mono;'>{result['confidence']}%</div></div>", unsafe_allow_html=True)
-    with c3: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Target Proportional Yield</div><div style='font-size:1.4rem; font-weight:700; color:#F59E0B; font-family:JetBrains Mono;'>{result['pips']} Pips</div></div>", unsafe_allow_html=True)
-    with c4: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Active Global Session</div><div style='font-size:0.85rem; font-weight:600; color:#94A3B8; margin-top:4px;'>{result['session']}</div></div>", unsafe_allow_html=True)
+    with c1: st.metric("Validated Matrix Vector", result["signal"])
+    with c2: st.metric("Confluence Confidence", f"{result['confidence']}%")
+    with c3: st.metric("Target Proportional Yield", f"{result['pips']} Pips")
+    with c4: st.metric("Active Global Session", result["session"])
     
     # Visual Matrix Factor Breakdown Pools
     st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
     sc1, sc2 = st.columns(2)
     sc1.markdown(f"<div style='background:rgba(16, 185, 129, 0.08); padding:14px; border-radius:10px; border:1px solid rgba(16, 185, 129, 0.15); font-size:0.9rem;'>🟢 Buy Confluence Weight: <b style='color:#10B981; font-family:JetBrains Mono; float:right;'>{result['buy_score']}/100</b></div>", unsafe_allow_html=True)
     sc2.markdown(f"<div style='background:rgba(239, 68, 68, 0.08); padding:14px; border-radius:10px; border:1px solid rgba(239, 68, 68, 0.15); font-size:0.9rem;'>🔴 Sell Confluence Weight: <b style='color:#EF4444; font-family:JetBrains Mono; float:right;'>{result['sell_score']}/100</b></div>", unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
 
     if "STRONG" in result["signal"] and result["pips"] >= 12.0:
         components.html('<audio autoplay style="display:none;"><source src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" type="audio/ogg"></audio>', height=0)
         st.toast(f"🚨 EXECUTABLE SMC MATRIX QUANT SIGNAL DETECTED FOR {pair}!", icon="⚡")
 
-@st.fragment(run_every=12)
+@st.experimental_fragment(run_every=12)
 def render_scanner_block():
     st.markdown('<div class="premium-card" style="height: 100%;">', unsafe_allow_html=True)
     st.markdown("<b style='font-size:1.1rem; color:#FFFFFF; display:block; margin-bottom:15px;'>📡 CROSS-PORTFOLIO ASSET MONITOR</b>", unsafe_allow_html=True)
     scan_data = run_matrix_portfolio_scan(tuple(pairs))
-    scanner_df = pd.DataFrame(scan_data, columns=["Asset Pair", "Vector State", "Confidence", "SMC Structural Diagnostics", "Risk Proportional Range", "Session Flow"])
+    scanner_df = pd.DataFrame(scan_data, columns=["Asset Pair", "Vector State", "Confidence", "SMC Structural Diagnostics", "Risk Range", "Session Flow"])
     st.dataframe(scanner_df, use_container_width=True, hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-@st.fragment
 def render_broadcast_hub(pair):
     st.markdown('<div class="premium-card">', unsafe_allow_html=True)
-    st.markdown("<b style='font-size:1.1rem; color:#FFFFFF; display:block; margin-bottom:15px;'>📩 ROUTED NETWORK TELEGRAM GATEWAY DISPATCH</b>", unsafe_allow_html=True)
+    st.markdown("<b style='font-size:1.1rem; color:#FFFFFF; display:block; margin-bottom:15px;'>📩 ROUTED NETWORK TELEGRAM DISPATCH</b>", unsafe_allow_html=True)
     confirm_send = st.checkbox("Confirm alignment with architectural execution parameters.", key="broadcast_check")
     st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
     
@@ -444,7 +452,7 @@ def render_broadcast_hub(pair):
 # =====================================================
 # SYSTEM LAYOUT COMPOSITOR ASSEMBLY
 # =====================================================
-st.markdown('<h1 class="terminal-header">TECH-STAR PRO</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="terminal-header">CORE VECTOR MATRIX PRO</h1>', unsafe_allow_html=True)
 st.markdown('<p class="terminal-subheader" style="margin-bottom:30px;">High-Fidelity Multi-Timeframe Quantitative Analytics Ecosystem</p>', unsafe_allow_html=True)
 
 col_layout_left, col_layout_right = st.columns([1.9, 1.1])
