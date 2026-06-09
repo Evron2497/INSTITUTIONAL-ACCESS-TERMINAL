@@ -15,19 +15,16 @@ import streamlit.components.v1 as components
 # =====================================================
 st.set_page_config(page_title="CORE VECTOR MATRIX PRO", page_icon="🏦", layout="wide")
 
-# High-contrast UI Theme Configuration Override
 st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
         
-        /* Base Container Overrides */
         html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
             background-color: #030712 !important;
             font-family: 'Space Grotesk', sans-serif !important;
             color: #F8FAFC !important;
         }
         
-        /* Premium High-Contrast Cards */
         .premium-card {
             background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
             border: 1px solid #334155;
@@ -42,7 +39,6 @@ st.markdown("""
             border-right: 1px solid #1e293b !important;
         }
         
-        /* Typography Elements */
         .terminal-header { 
             font-family: 'Space Grotesk'; 
             font-weight: 700; 
@@ -61,7 +57,6 @@ st.markdown("""
             margin-bottom: 16px;
         }
         
-        /* Metric Box Components Layout styling */
         .custom-metric {
             background: #0b1329 !important;
             border: 1px solid #1e293b !important;
@@ -83,7 +78,6 @@ st.markdown("""
             font-family: 'JetBrains Mono', monospace !important;
         }
         
-        /* High-Visibility Custom Action Buttons */
         .stButton>button { 
             background: linear-gradient(90deg, #2563EB 0%, #4F46E5 100%) !important; 
             color: #FFFFFF !important; 
@@ -97,14 +91,20 @@ st.markdown("""
         .stButton>button:hover {
             transform: translateY(-1px) !important;
             box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.4) !important;
-            border: none !important;
         }
         
-        /* Dataframe styling fixes */
         div[data-testid="stDataFrame"] {
             border: 1px solid #1e293b !important;
             border-radius: 8px !important;
             overflow: hidden;
+        }
+        
+        .reasoning-box {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px dashed #475569;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 15px;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -125,7 +125,8 @@ if "global_market_registry" not in st.session_state:
             "metrics": {
                 "signal": "INITIALIZING MATRIX", "confidence": 0, "entry": 0, "tp": 0, "sl": 0,
                 "pips": 0, "rsi": 50, "structure": "ESTABLISHING CORE LINK", "buy_score": 0, "sell_score": 0,
-                "session": "UNKNOWN", "timestamp": "CALIBRATING FLOW", "recent_high": 0, "recent_low": 0
+                "session": "UNKNOWN", "timestamp": "CALIBRATING FLOW", "recent_high": 0, "recent_low": 0,
+                "reasons": []
             }
         } for p in pairs
     }
@@ -190,6 +191,8 @@ def compute_analytics_matrix(pair, df):
     if df.empty or len(df) < 50:
         return st.session_state.global_market_registry[pair]["metrics"]
 
+    reasons = []
+
     # MT5 Indicator Emulations
     ema20 = df["Close"].ewm(span=20, adjust=False).mean()
     ema50 = df["Close"].ewm(span=50, adjust=False).mean()
@@ -201,6 +204,9 @@ def compute_analytics_matrix(pair, df):
     
     trend_bullish = curr_ema20 > curr_ema50 > curr_ema200
     trend_bearish = curr_ema20 < curr_ema50 < curr_ema200
+
+    if trend_bullish: reasons.append("EMAs (20/50/200) match a clear Bullish Structural Trend alignment.")
+    elif trend_bearish: reasons.append("EMAs (20/50/200) match a clear Bearish Structural Trend alignment.")
 
     # Fractal Swing Analysis
     swing_highs = []
@@ -230,16 +236,20 @@ def compute_analytics_matrix(pair, df):
             if last_sh < prev_sh:
                 smc_structure = "SWING CHoCH (BULLISH)"
                 structure_score_buy += 35
+                reasons.append("A clean Swing-based CHoCH was triggered, identifying an early bullish architectural shift.")
             else:
                 smc_structure = "SWING BOS (BULLISH)"
                 structure_score_buy += 25
+                reasons.append("A structural Swing-based BOS occurred, confirming clean bullish matrix continuation.")
         elif price < last_sl:
             if last_sl > prev_sl:
                 smc_structure = "SWING CHoCH (BEARISH)"
                 structure_score_sell += 35
+                reasons.append("A clean Swing-based CHoCH was triggered, identifying an early bearish architectural shift.")
             else:
                 smc_structure = "SWING BOS (BEARISH)"
                 structure_score_sell += 25
+                reasons.append("A structural Swing-based BOS occurred, confirming clean bearish matrix continuation.")
 
     # Range and OTE Setup (62% - 79%)
     trading_range = recent_high - recent_low if (recent_high - recent_low) != 0 else 0.001
@@ -248,9 +258,15 @@ def compute_analytics_matrix(pair, df):
     ote_buy_zone = (0.62 <= (1 - pct_position) <= 0.79)
     ote_sell_zone = (0.62 <= pct_position <= 0.79)
 
+    if ote_buy_zone: reasons.append("Market price rests precisely within the premium 62% - 79% Optimal Trade Entry (OTE) Buy Discount matrix.")
+    if ote_sell_zone: reasons.append("Market price rests precisely within the premium 62% - 79% Optimal Trade Entry (OTE) Sell Premium matrix.")
+
     # Liquidity Calculations
     sweep_ssl = df["Low"].iloc[-1] < recent_low and price > recent_low
     sweep_bsl = df["High"].iloc[-1] > recent_high and price < recent_high
+
+    if sweep_ssl: reasons.append("Sell-Side Liquidity (SSL) swept below the recent swing low cluster before rejection.")
+    if sweep_bsl: reasons.append("Buy-Side Liquidity (BSL) swept above the recent swing high cluster before rejection.")
 
     # FVG Detections
     fvg_buy = df["Low"].iloc[-1] > df["High"].iloc[-3] and df["Close"].iloc[-2] > df["Open"].iloc[-2]
@@ -258,6 +274,13 @@ def compute_analytics_matrix(pair, df):
     
     avg_tick_volume = df["Volume"].tail(20).mean()
     volume_expansion = df["Volume"].iloc[-1] > avg_tick_volume * 1.5
+
+    if fvg_buy:
+        v_status = "with institutional MT5 volume expansion confirmation" if volume_expansion else "lacking high tick volume validation"
+        reasons.append(f"A Bullish Fair Value Gap (FVG) validation pattern was localized {v_status}.")
+    if fvg_sell:
+        v_status = "with institutional MT5 volume expansion confirmation" if volume_expansion else "lacking high tick volume validation"
+        reasons.append(f"A Bearish Fair Value Gap (FVG) validation pattern was localized {v_status}.")
 
     # Execution System Weight Confluences
     buy_score = 25 if trend_bullish else 0
@@ -282,6 +305,8 @@ def compute_analytics_matrix(pair, df):
     buy_score = int(buy_score * killzone_multiplier)
     sell_score = int(sell_score * killzone_multiplier)
 
+    if is_killzone: reasons.append(f"Active market telemetry is within the hyper-fluid {session_label} sequence.")
+
     signal = "NEUTRAL"
     confidence = max(buy_score, sell_score)
 
@@ -289,6 +314,9 @@ def compute_analytics_matrix(pair, df):
     elif buy_score >= 45: signal = "ICT OTE BUY"
     elif sell_score >= 65: signal = "STRONG ICT SELL"
     elif sell_score >= 45: signal = "ICT OTE SELL"
+
+    if signal == "NEUTRAL":
+        reasons.append("Insufficient confluence array weightings. Restricting system risk entry parameters.")
 
     pip_mult = 0.01 if "JPY" in pair.upper() else (0.10 if "XAU" in pair.upper() else 0.0001)
     
@@ -309,7 +337,8 @@ def compute_analytics_matrix(pair, df):
         "tp": round(tp, 5), "sl": round(sl, 5), "pips": round(abs(tp - price) / pip_mult, 1) if "NEUTRAL" not in signal else 0,
         "rsi": int(pct_position * 100), "structure": smc_structure,
         "buy_score": min(buy_score, 100), "sell_score": min(sell_score, 100), "session": session_label,
-        "timestamp": datetime.now().strftime("%H:%M:%S"), "recent_high": round(recent_high, 5), "recent_low": round(recent_low, 5)
+        "timestamp": datetime.now().strftime("%H:%M:%S"), "recent_high": round(recent_high, 5), "recent_low": round(recent_low, 5),
+        "reasons": reasons
     }
 
 @st.fragment(run_every=4)
@@ -357,7 +386,6 @@ def render_live_dashboard(pair):
         st.info("Synchronizing multi-timeframe vectors with system node parameters...")
         return
 
-    # Native Signal Routing Notifications
     if "STRONG" in result["signal"] and result["pips"] >= 15.0:
         if result["signal"] != st.session_state.last_signal[pair]:
             components.html('<audio autoplay style="display:none;"><source src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" type="audio/ogg"></audio>', height=0)
@@ -366,7 +394,7 @@ def render_live_dashboard(pair):
     else:
         st.session_state.last_signal[pair] = None
 
-    # Candlestick Matrix Plot Generation
+    # Candlestick Plot
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
         x=plot_df["time"], open=plot_df["Open"], high=plot_df["High"], low=plot_df["Low"], close=plot_df["Close"], name=pair,
@@ -379,7 +407,7 @@ def render_live_dashboard(pair):
         fig.add_hline(y=result["recent_low"],  line_dash="dash", line_color="#06B6D4", opacity=0.6, annotation_text="SWING LOW", annotation_position="bottom left")
 
     fig.update_layout(
-        template="plotly_dark", height=400, xaxis_rangeslider_visible=False, uirevision=pair,
+        template="plotly_dark", height=380, xaxis_rangeslider_visible=False, uirevision=pair,
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='#090d16',
         margin=dict(l=10, r=10, t=10, b=10)
     )
@@ -390,7 +418,7 @@ def render_live_dashboard(pair):
     st.markdown(f"<div style='display:flex; justify-content:space-between; margin-bottom:16px;'><span class='section-title'>🛰️ SYSTEM MATRIX CORE: {pair}</span><span style='font-family:JetBrains Mono; color:#64748B;'>TICK: {result['timestamp']}</span></div>", unsafe_allow_html=True)
     st.plotly_chart(fig, use_container_width=True)
     
-    # Custom Dynamic Structural Metrics Blocks (Enhanced Readability Grid)
+    # Custom Grid Metrics Row Layout (Includes Pip Matrix Readout)
     color_hex = "#10B981" if "BUY" in result["signal"] else ("#EF4444" if "SELL" in result["signal"] else "#94A3B8")
     
     c1, c2, c3, c4 = st.columns(4)
@@ -406,13 +434,13 @@ def render_live_dashboard(pair):
         </div>""", unsafe_allow_html=True)
     with c3:
         st.markdown(f"""<div class='custom-metric'>
-            <div class='metric-label'>Target Parameters</div>
-            <div class='metric-value' style='color: #F59E0B;'>RR ≥ 2.0</div>
+            <div class='metric-label'>Calculated Pip Distance</div>
+            <div class='metric-value' style='color: #F59E0B;'>{result['pips']} Pips</div>
         </div>""", unsafe_allow_html=True)
     with c4:
         st.markdown(f"""<div class='custom-metric'>
-            <div class='metric-label'>Market Session</div>
-            <div class='metric-value' style='color: #E2E8F0; font-size: 0.95rem !important; font-family:sans-serif !important; padding-top:6px;'>{result['session']}</div>
+            <div class='metric-label'>Target Parameters</div>
+            <div class='metric-value' style='color: #E2E8F0;'>RR ≥ 2.1</div>
         </div>""", unsafe_allow_html=True)
     
     st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
@@ -422,6 +450,21 @@ def render_live_dashboard(pair):
     sc1.markdown(f"<div style='background:rgba(16, 185, 129, 0.04); padding:14px; border-radius:8px; border:1px solid #10B981; font-size:0.9rem; text-align:center;'>🟢 Buy Confluence Weight<br><b style='color:#10B981; font-family:JetBrains Mono; font-size:1.2rem;'>{result['buy_score']} / 100</b></div>", unsafe_allow_html=True)
     sc2.markdown(f"<div style='background:rgba(30, 41, 59, 0.5); padding:14px; border-radius:8px; border:1px solid #475569; font-size:0.9rem; text-align:center; color:#94A3B8;'>📑 Structural Diagnostics<br><b style='color:#FFF; font-family:sans-serif; font-size:0.95rem; display:inline-block; margin-top:4px;'>{result['structure']}</b></div>", unsafe_allow_html=True)
     sc3.markdown(f"<div style='background:rgba(239, 68, 68, 0.04); padding:14px; border-radius:8px; border:1px solid #EF4444; font-size:0.9rem; text-align:center;'>🔴 Sell Confluence Weight<br><b style='color:#EF4444; font-family:JetBrains Mono; font-size:1.2rem;'>{result['sell_score']} / 100</b></div>", unsafe_allow_html=True)
+    
+    # =====================================================
+    # NEW ELEMENT: DYNAMIC EXECUTABLE LOGIC ANALYTICS PANEL
+    # =====================================================
+    st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+    st.markdown("<span style='font-size:0.9rem; font-weight:600; color:#F1F5F9; text-transform:uppercase; letter-spacing:0.05em;'>📋 System Matrix Core Diagnostics (When/Why to Transact)</span>", unsafe_allow_html=True)
+    
+    st.markdown('<div class="reasoning-box">', unsafe_allow_html=True)
+    if result["reasons"]:
+        for reason in result["reasons"]:
+            st.markdown(f"<div style='font-size:0.88rem; color:#CBD5E1; margin-bottom:6px;'>• {reason}</div>", unsafe_allow_html=True)
+    else:
+        st.markdown("<div style='font-size:0.88rem; color:#64748B;'>Parsing telemetry array vectors...</div>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    
     st.markdown('</div>', unsafe_allow_html=True)
 
 @st.fragment(run_every=4)
@@ -433,9 +476,9 @@ def render_scanner_block():
     scan_results = []
     for p in pairs:
         res = st.session_state.global_market_registry[p]["metrics"]
-        scan_results.append([p, res["signal"], f"{res['confidence']}%", res["structure"], f"Entry: {res['entry']} | TP: {res['tp']}", res["session"]])
+        scan_results.append([p, res["signal"], f"{res['pips']} Pips", f"{res['confidence']}%", res["structure"], f"Entry: {res['entry']} | TP: {res['tp']}"])
             
-    scanner_df = pd.DataFrame(scan_results, columns=["Asset Pair", "Vector State", "Confidence", "SMC/ICT Diagnostics", "Target Parameters", "Session Flow"])
+    scanner_df = pd.DataFrame(scan_results, columns=["Asset Pair", "Vector State", "Target Pips", "Confidence", "SMC/ICT Diagnostics", "Target Parameters"])
     st.dataframe(scanner_df, use_container_width=True, hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -459,7 +502,7 @@ def render_broadcast_hub(pair):
         elif not BOT_TOKEN or not CHAT_IDS:
             st.error("Telegram configurations unconfigured in applications backend context.")
         else:
-            message = f"<b>🏦 SYSTEM SIGNAL VECTOR DISPATCH</b>\n\nASSET PAIR: {pair}\nSIGNAL BIAS: <b>{current_result['signal']}</b>\nCONFIDENCE: {current_result['confidence']}%\nSMC STRUCTURE: {current_result['structure']}\n\nENTRY RATE: {current_result['entry']}\nTARGET PROFIT (TP): {current_result['tp']}\nSTOP LOSS (SL): {current_result['sl']}\n\n📊 PROPORTIONAL RISK: <b>RR ≥ 2.1 Verified via MT5 Metrics Core</b>"
+            message = f"<b>🏦 SYSTEM SIGNAL VECTOR DISPATCH</b>\n\nASSET PAIR: {pair}\nSIGNAL BIAS: <b>{current_result['signal']}</b>\nCONFIDENCE: {current_result['confidence']}%\nPIP YIELD: {current_result['pips']} Pips\nSMC STRUCTURE: {current_result['structure']}\n\nENTRY RATE: {current_result['entry']}\nTARGET PROFIT (TP): {current_result['tp']}\nSTOP LOSS (SL): {current_result['sl']}\n\n📊 PROPORTIONAL RISK: <b>RR ≥ 2.1 Verified via MT5 Metrics Core</b>"
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
             errors = []
             for chat_id in CHAT_IDS:
