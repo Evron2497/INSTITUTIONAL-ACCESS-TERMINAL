@@ -8,6 +8,7 @@ import requests
 import streamlit as st
 import plotly.graph_objects as go
 import yfinance as yf
+import streamlit.components.v1 as components
 
 # =====================================================
 # PAGE CONFIG & PREMIUM INSTITUTIONAL VISUAL THEME
@@ -127,12 +128,12 @@ def send_telegram(message: str):
     return (len(errors) == 0), "; ".join(errors)
 
 # =====================================================
-# CONFIG & DATA INGESTION — Flattened & Squeezed
+# CONFIG & DATA INGESTION
 # =====================================================
 pairs = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "XAUUSD"]
 selected_pair = st.sidebar.selectbox("Select Active Vector Pair", pairs)
 
-@st.cache_data(ttl=20)  # Slightly bumped up to alleviate yfinance rate limits
+@st.cache_data(ttl=20)
 def get_data(symbol, bars=300, period="7d", interval="15m"):
     mapping = {
         "EURUSD": "EURUSD=X",
@@ -195,10 +196,8 @@ def get_data(symbol, bars=300, period="7d", interval="15m"):
 # =====================================================
 def calculate_swing_pivots(df: pd.DataFrame, left_bars: int = 5, right_bars: int = 5) -> pd.DataFrame:
     df = df.copy().reset_index(drop=True)
-    
     roll_high = df["High"].rolling(window=left_bars + right_bars + 1, center=True).max()
     roll_low = df["Low"].rolling(window=left_bars + right_bars + 1, center=True).min()
-    
     df["Swing_High"] = np.where(df["High"] == roll_high, df["High"], np.nan)
     df["Swing_Low"] = np.where(df["Low"] == roll_low, df["Low"], np.nan)
     return df
@@ -406,7 +405,7 @@ def run_scanner(pairs_tuple):
 # =====================================================
 # LIVE DASHBOARD DISPLAY FRAGMENT
 # =====================================================
-@st.fragment(run_every=6)  # Scaled to 6s loop cadence to optimize request budgeting
+@st.fragment(run_every=6)
 def render_live_dashboard(pair):
     market_data = get_data(pair, bars=300)
     if market_data is None or market_data.empty:
@@ -448,7 +447,7 @@ def render_live_dashboard(pair):
     fig.update_layout(title=f"📡CHART: {pair}", template="plotly_dark", height=450, xaxis_rangeslider_visible=False, uirevision="keep", paper_bgcolor='#0A0E17', plot_bgcolor='#0F1626', margin=dict(l=10, r=10, t=40, b=10))
     fig.update_xaxes(showgrid=False)
     fig.update_yaxes(showgrid=True, gridcolor='#1E293B')
-    st.plotly_chart(fig, width="stretch") # FIXED: Updated parameter to avoid deprecation runtime crash
+    st.plotly_chart(fig, width="stretch")
 
     st.markdown("### 🔍 Accumulation Metrics")
     sc1, sc2 = st.columns(2)
@@ -460,7 +459,7 @@ def render_live_dashboard(pair):
     color_hex = "#FFFFFF"
     if "BUY" in result["signal"]: 
         color_hex = "#00E676"
-    elif "SELL" in result["signal"]:  # FIXED: Pointed safely to result index mapping
+    elif "SELL" in result["signal"]:  
         color_hex = "#FF1744"
         
     c1, c2, c3, c4 = st.columns(4)
@@ -470,7 +469,7 @@ def render_live_dashboard(pair):
     with c4: st.markdown(f"<div data-testid='stMetricSimpleNormal'><div data-testid='stMetricLabel'>Session Active</div><div style='font-size:1.1rem; font-weight:600; color:#94A3B8; margin-top:5px;'>{result['session']}</div></div>", unsafe_allow_html=True)
 
     if "STRONG" in result["signal"] and result["pips"] >= 12.0:
-        st.iframe('https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg', height=0) # FIXED: Component wrapper updated
+        components.html('<audio autoplay style="display:none;"><source src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" type="audio/ogg"></audio>', height=0)
         st.toast(f"🚨 STRATEGIC SYSTEM SETUP DETECTED FOR {pair}!", icon="💰")
 
 # =====================================================
@@ -481,7 +480,7 @@ def render_scanner_block():
     st.subheader("📡 Portfolio Matrix Scanner")
     scan_data = run_scanner(tuple(pairs))
     scanner_df = pd.DataFrame(scan_data, columns=["Pair", "Signal Bias", "Confidence", "SMC Architecture Status", "Range Projection", "Current Session Flow"])
-    st.dataframe(scanner_df, width="stretch", hide_index=True) # FIXED: Adjusted sizing mechanics
+    st.dataframe(scanner_df, width="stretch", hide_index=True)
 
 # =====================================================
 # TELEGRAM LIVE DISPATCH FRAGMENT
@@ -528,21 +527,15 @@ render_broadcast_hub(selected_pair)
 st.markdown("---")
 st.subheader("📊 Quantitative Analytics Stream")
 
-# FIXED: Wrapped raw HTML setup using clean, modern iframe parameters
-tradingview_srcdoc = f"""
-<!DOCTYPE html>
-<html>
-<head><style>body {{ margin: 0; background-color: #0A0E17; }}</style></head>
-<body>
-<script src="https://s3.tradingview.com/tv.js"></script>
-<div id="tv_chart_container"></div>
-<script>
+tradingview_html = f"""
+<div id="tv_chart_container" style="height: 500px; width: 100%;"></div>
+<script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+<script type="text/javascript">
 new TradingView.widget({{
+  "autosize": true,
   "symbol": "OANDA:{selected_pair}",
   "interval": "15",
   "container_id": "tv_chart_container",
-  "width": "100%",
-  "height": 500,
   "theme": "dark",
   "style": "1",
   "locale": "en",
@@ -552,7 +545,6 @@ new TradingView.widget({{
   "allow_symbol_change": true
 }});
 </script>
-</body>
-</html>
 """
-st.iframe(srcdoc=tradingview_srcdoc, height=520)
+# FIXED: Using explicit components.html function to pass string text cleanly
+components.html(tradingview_html, height=520, scrolling=False)
