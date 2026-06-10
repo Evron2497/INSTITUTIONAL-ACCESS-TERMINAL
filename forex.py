@@ -17,7 +17,7 @@ st.set_page_config(page_title="VECTOR MATRIX PRO", page_icon="🏦", layout="wid
 
 st.markdown("""
 <style>  
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');  
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght=400;500;700&family=Space+Grotesk:wght=400;500;600;700&display=swap');  
       
     html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {  
         background-color: #030712 !important;  
@@ -194,12 +194,15 @@ def compute_analytics_matrix(pair, df):
     reasons = []  
     pip_mult = 0.01 if "JPY" in pair.upper() else (0.10 if "XAU" in pair.upper() else 0.0001)
 
-    # Trend Filter (EMAs)
+    # MT5 Indicator Emulations  
     ema20 = df["Close"].ewm(span=20, adjust=False).mean()  
     ema50 = df["Close"].ewm(span=50, adjust=False).mean()  
     ema200 = df["Close"].ewm(span=200, adjust=False).mean()  
       
-    curr_ema20, curr_ema50, curr_ema200 = ema20.iloc[-1], ema50.iloc[-1], ema200.iloc[-1]  
+    curr_ema20 = ema20.iloc[-1]  
+    curr_ema50 = ema50.iloc[-1]  
+    curr_ema200 = ema200.iloc[-1]  
+      
     trend_bullish = curr_ema20 > curr_ema50 > curr_ema200  
     trend_bearish = curr_ema20 < curr_ema50 < curr_ema200  
 
@@ -207,85 +210,108 @@ def compute_analytics_matrix(pair, df):
     elif trend_bearish: reasons.append("EMAs (20/50/200) match a clear Bearish Structural Trend alignment.")  
 
     # Fractal Swing Analysis  
-    swing_highs, swing_lows = [], []  
+    swing_highs = []  
+    swing_lows = []  
     for i in range(5, len(df) - 5):  
         if df["High"].iloc[i] == df["High"].iloc[i-5:i+6].max():  
-            swing_highs.append(df["High"].iloc[i])  
+            swing_highs.append((df["time"].iloc[i], df["High"].iloc[i]))  
         if df["Low"].iloc[i] == df["Low"].iloc[i-5:i+6].min():  
-            swing_lows.append(df["Low"].iloc[i])  
+            swing_lows.append((df["time"].iloc[i], df["Low"].iloc[i]))  
 
-    recent_high = swing_highs[-1] if swing_highs else float(df["High"].max())  
-    recent_low = swing_lows[-1] if swing_lows else float(df["Low"].min())  
+    recent_high = swing_highs[-1][1] if swing_highs else float(df["High"].max())  
+    recent_low = swing_lows[-1][1] if swing_lows else float(df["Low"].min())  
     price = float(df["Close"].iloc[-1])  
       
-    # Fibonacci Retracement Levels
-    trading_range = recent_high - recent_low if (recent_high - recent_low) != 0 else 0.001
-    fib_0 = recent_high
-    fib_236 = recent_high - (0.236 * trading_range)
-    fib_382 = recent_high - (0.382 * trading_range)
+    # Structural Transitions  
+    smc_structure = "CONSOLIDATION FRAMEWORK"  
+    structure_score_buy = 0  
+    structure_score_sell = 0  
+      
+    if len(swing_highs) >= 2 and len(swing_lows) >= 2:  
+        last_sh = swing_highs[-1][1]  
+        prev_sh = swing_highs[-2][1]  
+        last_sl = swing_lows[-1][1]  
+        prev_sl = swing_lows[-2][1]  
+          
+        if price > last_sh:  
+            if last_sh < prev_sh:  
+                smc_structure = "SWING CHoCH (BULLISH)"  
+                structure_score_buy += 35  
+                reasons.append("A clean Swing-based CHoCH was triggered, identifying an early bullish architectural shift.")  
+            else:  
+                smc_structure = "SWING BOS (BULLISH)"  
+                structure_score_buy += 25  
+                reasons.append("A structural Swing-based BOS occurred, confirming clean bullish matrix continuation.")  
+        elif price < last_sl:  
+            if last_sl > prev_sl:  
+                smc_structure = "SWING CHoCH (BEARISH)"  
+                structure_score_sell += 35  
+                reasons.append("A clean Swing-based CHoCH was triggered, identifying an early bearish architectural shift.")  
+            else:  
+                smc_structure = "SWING BOS (BEARISH)"  
+                structure_score_sell += 25  
+                reasons.append("A structural Swing-based BOS occurred, confirming clean bearish matrix continuation.")  
+
+    # Complete Fibonacci Array Setup & OTE Setup (62% - 79%)  
+    trading_range = recent_high - recent_low if (recent_high - recent_low) != 0 else 0.001  
+    pct_position = (price - recent_low) / trading_range  
+      
     fib_500 = recent_high - (0.500 * trading_range)
     fib_618 = recent_high - (0.618 * trading_range)
-    fib_705 = recent_high - (0.705 * trading_range) # ICT OTE Sweet Spot
+    fib_705 = recent_high - (0.705 * trading_range)  # Institutional Sweet Spot
     fib_786 = recent_high - (0.786 * trading_range)
-    fib_100 = recent_low
 
-    # ICT Premium vs Discount Model
-    is_in_discount = price < fib_500
-    is_in_premium = price > fib_500
-    ote_buy_zone = fib_786 <= price <= fib_618
-    ote_sell_zone = fib_618 <= price <= fib_786
+    ote_buy_zone = (0.62 <= (1 - pct_position) <= 0.79)  
+    ote_sell_zone = (0.62 <= pct_position <= 0.79)  
 
-    if ote_buy_zone: reasons.append("Market rests precisely inside the 61.8% - 78.6% Optimal Trade Entry (OTE) Buy Discount Matrix.")  
-    if ote_sell_zone: reasons.append("Market rests precisely inside the 61.8% - 78.6% Optimal Trade Entry (OTE) Sell Premium Matrix.")  
+    if ote_buy_zone: reasons.append("Market price rests precisely within the premium 62% - 79% Optimal Trade Entry (OTE) Buy Discount matrix.")  
+    if ote_sell_zone: reasons.append("Market price rests precisely within the premium 62% - 79% Optimal Trade Entry (OTE) Sell Premium matrix.")  
 
-    # Market Structure (BOS / CHoCH)
-    smc_structure = "CONSOLIDATION FRAMEWORK"  
-    structure_score_buy, structure_score_sell = 0, 0  
-    
-    if len(swing_highs) >= 2 and len(swing_lows) >= 2:  
-        if price > swing_highs[-1]:  
-            smc_structure = "SWING CHoCH (BULLISH)" if swing_highs[-1] < swing_highs[-2] else "SWING BOS (BULLISH)"
-            structure_score_buy += 35 if "CHoCH" in smc_structure else 25
-            reasons.append(f"Structural {smc_structure} expansion localized, validating bullish bias continuation.")
-        elif price < swing_lows[-1]:  
-            smc_structure = "SWING CHoCH (BEARISH)" if swing_lows[-1] > swing_lows[-2] else "SWING BOS (BEARISH)"
-            structure_score_sell += 35 if "CHoCH" in smc_structure else 25
-            reasons.append(f"Structural {smc_structure} expansion localized, validating bearish bias continuation.")
+    # Advanced ICT Order Block Identification Engine
+    ob_bullish = False
+    ob_bearish = False
+    avg_tick_volume = df["Volume"].tail(20).mean()  
+    volume_expansion = df["Volume"].iloc[-1] > avg_tick_volume * 1.5  
 
-    # ICT Order Block (OB) Identification Logic
-    ob_bullish, ob_bearish = False, False
-    # Look back over recent candles to find down/up close validation sequences
     for idx in range(-5, -1):
+        # Bullish OB: Last down candle before an aggressive upward vector break
         if df["Close"].iloc[idx] < df["Open"].iloc[idx] and df["Close"].iloc[-1] > df["High"].iloc[idx]:
-            ob_bullish = True
+            if price < df["High"].iloc[idx] and price > df["Low"].iloc[idx]:
+                ob_bullish = True
+        # Bearish OB: Last up candle before an aggressive downward vector break
         if df["Close"].iloc[idx] > df["Open"].iloc[idx] and df["Close"].iloc[-1] < df["Low"].iloc[idx]:
-            ob_bearish = True
+            if price > df["Low"].iloc[idx] and price < df["High"].iloc[idx]:
+                ob_bearish = True
 
-    if ob_bullish and is_in_discount:
-        structure_score_buy += 20
-        reasons.append("Mitigation of validated Bullish ICT Order Block inside Discount range detected.")
-    if ob_bearish and is_in_premium:
-        structure_score_sell += 20
-        reasons.append("Mitigation of validated Bearish ICT Order Block inside Premium range detected.")
+    if ob_bullish and price < fib_500:
+        structure_score_buy += 25
+        reasons.append("Mitigation of validated Bullish ICT Order Block inside Discount profile verified.")
+    if ob_bearish and price > fib_500:
+        structure_score_sell += 25
+        reasons.append("Mitigation of validated Bearish ICT Order Block inside Premium profile verified.")
 
-    # Liquidity Sweeps (SSL / BSL)
+    # Liquidity Calculations  
     sweep_ssl = df["Low"].iloc[-1] < recent_low and price > recent_low  
     sweep_bsl = df["High"].iloc[-1] > recent_high and price < recent_high  
-    if sweep_ssl: reasons.append("Sell-Side Liquidity (SSL) swept below swing low cluster before aggressive reclaim.")  
-    if sweep_bsl: reasons.append("Buy-Side Liquidity (BSL) swept above swing high cluster before aggressive rejection.")  
 
-    # Fair Value Gaps (FVG)
+    if sweep_ssl: reasons.append("Sell-Side Liquidity (SSL) swept below the recent swing low cluster before rejection.")  
+    if sweep_bsl: reasons.append("Buy-Side Liquidity (BSL) swept above the recent swing high cluster before rejection.")  
+
+    # FVG Detections  
     fvg_buy = df["Low"].iloc[-1] > df["High"].iloc[-3] and df["Close"].iloc[-2] > df["Open"].iloc[-2]  
     fvg_sell = df["High"].iloc[-1] < df["Low"].iloc[-3] and df["Close"].iloc[-2] < df["Open"].iloc[-2]  
-    avg_tick_volume = df["Volume"].tail(20).mean()  
-    volume_expansion = df["Volume"].iloc[-1] > avg_tick_volume * 1.3  
 
-    if fvg_buy: reasons.append(f"Bullish FVG left wide open {'with institutional volume footprint' if volume_expansion else ''}.")
-    if fvg_sell: reasons.append(f"Bearish FVG left wide open {'with institutional volume footprint' if volume_expansion else ''}.")
+    if fvg_buy:  
+        v_status = "with institutional MT5 volume expansion confirmation" if volume_expansion else "lacking high tick volume validation"  
+        reasons.append(f"A Bullish Fair Value Gap (FVG) validation pattern was localized {v_status}.")  
+    if fvg_sell:  
+        v_status = "with institutional MT5 volume expansion confirmation" if volume_expansion else "lacking high tick volume validation"  
+        reasons.append(f"A Bearish Fair Value Gap (FVG) validation pattern was localized {v_status}.")  
 
-    # Multi-Confluence Scoring System
+    # Execution System Weight Confluences  
     buy_score = 25 if trend_bullish else 0  
     sell_score = 25 if trend_bearish else 0  
+      
     buy_score += structure_score_buy  
     sell_score += structure_score_sell  
       
@@ -293,56 +319,57 @@ def compute_analytics_matrix(pair, df):
     if sweep_bsl: sell_score += 30  
     if fvg_buy: buy_score += 20 if volume_expansion else 10  
     if fvg_sell: sell_score += 20 if volume_expansion else 10  
-    if ote_buy_zone: buy_score += 25  
-    if ote_sell_zone: sell_score += 25  
 
-    # Discipline Rule: Penalize Chasing Out-Of-Zone Setups
-    if not is_in_discount: buy_score = int(buy_score * 0.25)
-    if not is_in_premium: sell_score = int(sell_score * 0.25)
+    if ote_buy_zone: buy_score += 25  
+    else: buy_score = int(buy_score * 0.3)  
+          
+    if ote_sell_zone: sell_score += 25  
+    else: sell_score = int(sell_score * 0.3)  
 
     session_label, is_killzone = system_session_and_killzone()  
-    killzone_multiplier = 1.35 if is_killzone else 0.75  
-    buy_score, sell_score = int(buy_score * killzone_multiplier), int(sell_score * killzone_multiplier)  
+    killzone_multiplier = 1.3 if is_killzone else 0.8  
+    buy_score = int(buy_score * killzone_multiplier)  
+    sell_score = int(sell_score * killzone_multiplier)  
 
-    if is_killzone: reasons.append(f"Algorithmic parameters are active inside the volatile {session_label} engine space.")  
+    if is_killzone: reasons.append(f"Active market telemetry is within the hyper-fluid {session_label} sequence.")  
 
-    # Direction Dispatch
     signal = "NEUTRAL"  
     confidence = max(buy_score, sell_score)  
-    if buy_score >= 70: signal = "STRONG ICT BUY"  
-    elif buy_score >= 50: signal = "ICT OTE BUY"  
-    elif sell_score >= 70: signal = "STRONG ICT SELL"  
-    elif sell_score >= 50: signal = "ICT OTE SELL"  
 
-    if signal == "NEUTRAL": reasons.append("Insufficient confluence convergence weight. Neutralizing systemic trading risk.")  
+    if buy_score >= 65: signal = "STRONG ICT BUY"  
+    elif buy_score >= 45: signal = "ICT OTE BUY"  
+    elif sell_score >= 65: signal = "STRONG ICT SELL"  
+    elif sell_score >= 45: signal = "ICT OTE SELL"  
 
-    # Volatility-Calibrated Targets (Minimum Floor = 10 Pips Enforced)
+    if signal == "NEUTRAL":  
+        reasons.append("Insufficient confluence array weightings. Restricting system risk entry parameters.")  
+
+    # Volatility Risk Matrix Optimization Floor Engine (Minimum Floor = 10 Pips Enforced)
     min_pips_floor = 10.0
     if "BUY" in signal:  
         sl = recent_low - (2 * pip_mult)  
         risk = price - sl if (price - sl) > 0 else (5 * pip_mult)  
-        tp_calculated = price + (risk * 2.5)
-        # Check if target meets our required structural floor
+        tp_calculated = price + (risk * 2.1)  
         if ((tp_calculated - price) / pip_mult) < min_pips_floor:
             tp_calculated = price + (min_pips_floor * pip_mult)
-        tp, sl = tp_calculated, sl
+        tp = tp_calculated
     elif "SELL" in signal:  
         sl = recent_high + (2 * pip_mult)  
         risk = sl - price if (sl - price) > 0 else (5 * pip_mult)  
-        tp_calculated = price - (risk * 2.5)  
+        tp_calculated = price - (risk * 2.1)  
         if ((price - tp_calculated) / pip_mult) < min_pips_floor:
             tp_calculated = price - (min_pips_floor * pip_mult)
-        tp, sl = tp_calculated, sl
+        tp = tp_calculated
     else:  
         tp, sl = price, price  
 
     return {  
         "signal": signal, "confidence": min(round(confidence, 1), 100), "entry": round(price, 5),  
         "tp": round(tp, 5), "sl": round(sl, 5), "pips": round(abs(tp - price) / pip_mult, 1) if "NEUTRAL" not in signal else 0,  
-        "rsi": int(max(0, min(100, (price - recent_low) / trading_range * 100))), "structure": smc_structure,  
+        "rsi": int(max(0, min(100, pct_position * 100))), "structure": smc_structure,  
         "buy_score": min(buy_score, 100), "sell_score": min(sell_score, 100), "session": session_label,  
         "timestamp": datetime.now().strftime("%H:%M:%S"), "recent_high": round(recent_high, 5), "recent_low": round(recent_low, 5),  
-        "reasons": reasons, "fib_500": fib_500, "fib_618": fib_618, "fib_786": fib_786
+        "reasons": reasons, "fib_500": fib_500, "fib_618": fib_618, "fib_705": fib_705, "fib_786": fib_786
     }
 
 @st.fragment(run_every=4)
@@ -393,12 +420,12 @@ def render_live_dashboard(pair):
     if "STRONG" in result["signal"] and result["pips"] >= 10.0:  
         if result["signal"] != st.session_state.last_signal[pair]:  
             components.html('<audio autoplay style="display:none;"><source src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" type="audio/ogg"></audio>', height=0)  
-            st.toast(f"🚨 EXECUTABLE CORE ICT QUANT SETUP ALIGNED ON {pair}!", icon="⚡")  
+            st.toast(f"🚨 EXECUTABLE SMC QUANT SIGNAL ON {pair}!", icon="⚡")  
             st.session_state.last_signal[pair] = result["signal"]  
     else:  
         st.session_state.last_signal[pair] = None  
 
-    # Enhanced Candlestick Plot with Fibonacci Target Anchors
+    # Candlestick Plot  
     fig = go.Figure()  
     fig.add_trace(go.Candlestick(  
         x=plot_df["time"], open=plot_df["Open"], high=plot_df["High"], low=plot_df["Low"], close=plot_df["Close"], name=pair,  
@@ -407,15 +434,16 @@ def render_live_dashboard(pair):
     ))  
       
     if result["recent_high"] > 0:  
-        fig.add_hline(y=result["recent_high"], line_dash="dash", line_color="#F59E0B", opacity=0.4, annotation_text="FIB 0.0% / Range Ceiling")  
+        fig.add_hline(y=result["recent_high"], line_dash="dash", line_color="#F59E0B", opacity=0.4, annotation_text="SWING HIGH / FIB 0.0%")  
         if "fib_500" in result:
-            fig.add_hline(y=result["fib_500"], line_dash="dot", line_color="#94A3B8", opacity=0.5, annotation_text="Equilibrium (50.0%)")
-            fig.add_hline(y=result["fib_618"], line_dash="dash", line_color="#38BDF8", opacity=0.4, annotation_text="OTE Threshold (61.8%)")
-            fig.add_hline(y=result["fib_786"], line_dash="dash", line_color="#818CF8", opacity=0.4, annotation_text="OTE Invalidation (78.6%)")
-        fig.add_hline(y=result["recent_low"],  line_dash="dash", line_color="#06B6D4", opacity=0.4, annotation_text="FIB 100.0% / Range Floor")  
+            fig.add_hline(y=result["fib_500"], line_dash="dot", line_color="#475569", opacity=0.5, annotation_text="EQUILIBRIUM 50.0%")
+            fig.add_hline(y=result["fib_618"], line_dash="dash", line_color="#38BDF8", opacity=0.3, annotation_text="OTE 61.8%")
+            fig.add_hline(y=result["fib_705"], line_dash="dash", line_color="#6366F1", opacity=0.5, annotation_text="OTE SWEET SPOT 70.5%")
+            fig.add_hline(y=result["fib_786"], line_dash="dash", line_color="#818CF8", opacity=0.3, annotation_text="OTE 78.6%")
+        fig.add_hline(y=result["recent_low"],  line_dash="dash", line_color="#06B6D4", opacity=0.4, annotation_text="SWING LOW / FIB 100.0%")  
 
     fig.update_layout(  
-        template="plotly_dark", height=400, xaxis_rangeslider_visible=False, uirevision=pair,  
+        template="plotly_dark", height=380, xaxis_rangeslider_visible=False, uirevision=pair,  
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='#090d16',  
         margin=dict(l=10, r=10, t=10, b=10)  
     )  
@@ -423,7 +451,7 @@ def render_live_dashboard(pair):
     fig.update_yaxes(showgrid=True, gridcolor='#1e293b', side="right")  
       
     st.markdown('<div class="premium-card">', unsafe_allow_html=True)  
-    st.markdown(f"<div style='display:flex; justify-content:space-between; margin-bottom:16px;'><span class='section-title'>🛰️ VECTOR TERMINAL FRAME: {pair}</span><span style='font-family:JetBrains Mono; color:#64748B;'>TICK: {result['timestamp']}</span></div>", unsafe_allow_html=True)  
+    st.markdown(f"<div style='display:flex; justify-content:space-between; margin-bottom:16px;'><span class='section-title'>🛰️ SYSTEM MATRIX CORE: {pair}</span><span style='font-family:JetBrains Mono; color:#64748B;'>TICK: {result['timestamp']}</span></div>", unsafe_allow_html=True)  
     st.plotly_chart(fig, use_container_width=True)  
       
     # Custom Grid Metrics Row Layout  
@@ -437,7 +465,7 @@ def render_live_dashboard(pair):
         </div>""", unsafe_allow_html=True)  
     with c2:  
         st.markdown(f"""<div class='custom-metric'>  
-            <div class='metric-label'>SMC Core Confluence</div>  
+            <div class='metric-label'>SMC Confluence</div>  
             <div class='metric-value' style='color: #06B6D4;'>{result['confidence']}%</div>  
         </div>""", unsafe_allow_html=True)  
     with c3:  
@@ -447,8 +475,8 @@ def render_live_dashboard(pair):
         </div>""", unsafe_allow_html=True)  
     with c4:  
         st.markdown(f"""<div class='custom-metric'>  
-            <div class='metric-label'>SMC Range Profile</div>  
-            <div class='metric-value' style='color: #818CF8;'>{result['structure']}</div>  
+            <div class='metric-label'>Target Parameters</div>  
+            <div class='metric-value' style='color: #818CF8; font-size:1.1rem !important;'>TP: {result['tp']}<br>SL: {result['sl']}</div>  
         </div>""", unsafe_allow_html=True)  
 
     # Live Execution Framework Logs Below Chart
