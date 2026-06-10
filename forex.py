@@ -756,7 +756,6 @@ def send_telegram_notification(pair, signal, confidence, tp, sl, pips, entry):
         image_url = "https://raw.githubusercontent.com/tradingview/patterns/main/short_position_guide.png"
         action_emoji = "🔴 SHORT DISPLACEMENT POSITION"
     else:
-        # Default fallback image for consolidation/neutral manual broadcasts
         image_url = "https://raw.githubusercontent.com/tradingview/patterns/main/consolidation_guide.png"
         action_emoji = "⚪ NEUTRAL / NO CURRENT BIAS"
 
@@ -841,9 +840,7 @@ def compute_analytics_matrix(pair, df):
       
     if len(swing_highs) >= 2 and len(swing_lows) >= 2:  
         last_sh = swing_highs[-1][1]  
-        prev_sh = swing_highs[-2][2] if len(swing_highs) > 1 else recent_high
         last_sl = swing_lows[-1][1]  
-        prev_sl = swing_lows[-2][2] if len(swing_lows) > 1 else recent_low
           
         if price > last_sh:  
             smc_structure = "SWING BOS (BULLISH)"  
