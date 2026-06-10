@@ -565,7 +565,6 @@
 #     """, unsafe_allow_html=True)  
 
 # render_live_dashboard(selected_pair)
-
 import os
 from datetime import datetime, timezone
 import time
@@ -737,14 +736,14 @@ if not st.session_state.logged_in:
     st.stop()
 
 # =====================================================
-# TELEGRAM PHOTO BROADCAST ENGINE
+# TELEGRAM MULTI-CHANNEL PHOTO BROADCAST ENGINE
 # =====================================================
 def send_telegram_notification(pair, signal, confidence, tp, sl, pips, entry):
-    """Sends calculated market parameters along with visual chart position mapping."""
-    bot_token = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
-    chat_id = st.secrets.get("TELEGRAM_CHAT_ID", "")
+    """Broadcasts calculated market parameters to all chat IDs found in secrets."""
+    bot_token = st.secrets.get("BOT_TOKEN", "")
+    chat_ids = st.secrets.get("CHAT_IDS", [])
     
-    if not bot_token or not chat_id:
+    if not bot_token or not chat_ids:
         return False
         
     if "BUY" in signal:
@@ -764,25 +763,31 @@ def send_telegram_notification(pair, signal, confidence, tp, sl, pips, entry):
         f"🔹 *Entry Threshold:* {entry}\n"
         f"🟢 *Take Profit:* {tp}\n"
         f"🔴 *Stop Loss:* {sl}\n\n"
-        f"ℹ️ _Reference the image above for your Long/Short chart deployment tool._\n"
+        f"ℹ️ _Reference attached layout chart deployment tool._\n"
         f"🕒 _Timestamp (UTC):_ {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}"
     )
     
     url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
-    payload = {
-        "chat_id": chat_id,
-        "photo": image_url,
-        "caption": message,
-        "parse_mode": "Markdown"
-    }
-    try:
-        response = requests.post(url, json=payload, timeout=7)
-        return response.status_code == 200
-    except Exception:
-        return False
+    all_successful = True
+    
+    for chat_id in chat_ids:
+        payload = {
+            "chat_id": str(chat_id).strip(),
+            "photo": image_url,
+            "caption": message,
+            "parse_mode": "Markdown"
+        }
+        try:
+            response = requests.post(url, json=payload, timeout=7)
+            if response.status_code != 200:
+                all_successful = False
+        except Exception:
+            all_successful = False
+            
+    return all_successful
 
 # =====================================================
-# REBUILT INSTITUTIONAL SMC/ICT/FIBONACCI TELEMETRY ENGINE
+# INSTITUTIONAL SMC/ICT/FIBONACCI TELEMETRY ENGINE
 # =====================================================
 def system_session_and_killzone():
     now_utc = datetime.now(timezone.utc)  
@@ -1069,15 +1074,15 @@ def render_live_dashboard(pair):
         # Interactive Control Interface Trigger Button
         btn_label = f"📤 BROADCAST {pair} SIGNAL"
         if st.button(btn_label, use_container_width=True, key="manual_broadcast_trigger"):
-            with st.spinner("Processing Matrix Packets..."):
+            with st.spinner("Dispatching Matrix Packets to Network..."):
                 status = send_telegram_notification(
                     pair=pair, signal=result["signal"], confidence=result["confidence"],
                     tp=result["tp"], sl=result["sl"], pips=result["pips"], entry=result["entry"]
                 )
                 if status:
-                    st.success(f"Successfully sent {pair} blueprint photo layout!")
+                    st.success(f"Successfully broadcasted to all registered channels!")
                 else:
-                    st.error("Broadcast failed. Confirm Telegram Secrets Tokens.")
+                    st.warning("Broadcast finished. Confirm individual Chat permissions if failure flags raised.")
         
         st.markdown("<div style='margin-top:20px; border-top:1px solid #1e293b; padding-top:15px;'></div>", unsafe_allow_html=True)
         st.markdown(f"""
