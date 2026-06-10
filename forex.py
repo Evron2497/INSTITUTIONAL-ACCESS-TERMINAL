@@ -14,10 +14,9 @@ import streamlit.components.v1 as components
 # SYSTEM DESIGN & ULTRA-DARK ARCHITECTURAL INTERFACE
 # =====================================================
 st.set_page_config(page_title="VECTOR MATRIX PRO", page_icon="🏦", layout="wide")
-
 st.markdown("""
 <style>  
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght=400;500;700&family=Space+Grotesk:wght=400;500;600;700&display=swap');  
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');  
       
     html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {  
         background-color: #030712 !important;  
@@ -35,7 +34,7 @@ st.markdown("""
     }  
       
     [data-testid="stSidebar"] {   
-        background-color: #090d16 !important;   
+        background-color: #090d16 !important;  
         border-right: 1px solid #1e293b !important;  
     }  
       
@@ -126,7 +125,7 @@ if "global_market_registry" not in st.session_state:
                 "signal": "INITIALIZING MATRIX", "confidence": 0, "entry": 0, "tp": 0, "sl": 0,  
                 "pips": 0, "rsi": 50, "structure": "ESTABLISHING CORE LINK", "buy_score": 0, "sell_score": 0,  
                 "session": "UNKNOWN", "timestamp": "CALIBRATING FLOW", "recent_high": 0, "recent_low": 0,  
-                "reasons": []  
+                "reasons": [], "fib_618": 0, "fib_786": 0
             }  
         } for p in pairs  
     }
@@ -137,8 +136,8 @@ if "last_signal" not in st.session_state:
 # =====================================================
 # PERSISTENT SECURE IDENTITY GATEWAY (ANTI-REFRESH)
 # =====================================================
-USERNAME = st.secrets.get("USERNAME", "admin")
-PASSWORD = st.secrets.get("PASSWORD", "matrix")
+USERNAME = st.secrets.get("USERNAME", "")
+PASSWORD = st.secrets.get("PASSWORD", "")
 
 if "logged_in" not in st.session_state:
     if st.query_params.get("auth_session") == "active":  
@@ -169,7 +168,35 @@ if not st.session_state.logged_in:
     st.stop()
 
 # =====================================================
-# REBUILT INSTITUTIONAL SMC/ICT TELEMETRY ENGINE
+# TELEGRAM BROADCAST ENGINE
+# =====================================================
+def send_telegram_notification(pair, signal, confidence, tp, sl, pips):
+    bot_token = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id = st.secrets.get("TELEGRAM_CHAT_ID", "")
+    
+    if not bot_token or not chat_id:
+        return  
+        
+    message = (
+        f"🚨 *VECTOR MATRIX PRO ALPHA SIGNAL*\n\n"
+        f"📊 *Asset Pair:* {pair}\n"
+        f"⚡ *Action Bias:* {signal}\n"
+        f"🎯 *Confluence Score:* {confidence}%\n"
+        f"📏 *Calculated Target:* {pips} Pips\n\n"
+        f"🟢 *Take Profit:* {tp}\n"
+        f"🔴 *Stop Loss:* {sl}\n\n"
+        f"🕒 _Timestamp (UTC):_ {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+    
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
+    try:
+        requests.post(url, json=payload, timeout=5)
+    except Exception:
+        pass  
+
+# =====================================================
+# REBUILT INSTITUTIONAL SMC/ICT/FIBONACCI TELEMETRY ENGINE
 # =====================================================
 def system_session_and_killzone():
     now_utc = datetime.now(timezone.utc)  
@@ -192,9 +219,7 @@ def compute_analytics_matrix(pair, df):
         return st.session_state.global_market_registry[pair]["metrics"]  
 
     reasons = []  
-    pip_mult = 0.01 if "JPY" in pair.upper() else (0.10 if "XAU" in pair.upper() else 0.0001)
 
-    # MT5 Indicator Emulations  
     ema20 = df["Close"].ewm(span=20, adjust=False).mean()  
     ema50 = df["Close"].ewm(span=50, adjust=False).mean()  
     ema200 = df["Close"].ewm(span=200, adjust=False).mean()  
@@ -209,7 +234,6 @@ def compute_analytics_matrix(pair, df):
     if trend_bullish: reasons.append("EMAs (20/50/200) match a clear Bullish Structural Trend alignment.")  
     elif trend_bearish: reasons.append("EMAs (20/50/200) match a clear Bearish Structural Trend alignment.")  
 
-    # Fractal Swing Analysis  
     swing_highs = []  
     swing_lows = []  
     for i in range(5, len(df) - 5):  
@@ -222,7 +246,6 @@ def compute_analytics_matrix(pair, df):
     recent_low = swing_lows[-1][1] if swing_lows else float(df["Low"].min())  
     price = float(df["Close"].iloc[-1])  
       
-    # Structural Transitions  
     smc_structure = "CONSOLIDATION FRAMEWORK"  
     structure_score_buy = 0  
     structure_score_sell = 0  
@@ -252,54 +275,35 @@ def compute_analytics_matrix(pair, df):
                 structure_score_sell += 25  
                 reasons.append("A structural Swing-based BOS occurred, confirming clean bearish matrix continuation.")  
 
-    # Complete Fibonacci Array Setup & OTE Setup (62% - 79%)  
-    trading_range = recent_high - recent_low if (recent_high - recent_low) != 0 else 0.001  
-    pct_position = (price - recent_low) / trading_range  
-      
-    fib_500 = recent_high - (0.500 * trading_range)
+    trading_range = recent_high - recent_low if (recent_high - recent_low) != 0 else 0.001
     fib_618 = recent_high - (0.618 * trading_range)
-    fib_705 = recent_high - (0.705 * trading_range)  # Institutional Sweet Spot
     fib_786 = recent_high - (0.786 * trading_range)
 
+    pct_position = (price - recent_low) / trading_range  
     ote_buy_zone = (0.62 <= (1 - pct_position) <= 0.79)  
     ote_sell_zone = (0.62 <= pct_position <= 0.79)  
 
-    if ote_buy_zone: reasons.append("Market price rests precisely within the premium 62% - 79% Optimal Trade Entry (OTE) Buy Discount matrix.")  
-    if ote_sell_zone: reasons.append("Market price rests precisely within the premium 62% - 79% Optimal Trade Entry (OTE) Sell Premium matrix.")  
+    fib_confluence_buy = False
+    fib_confluence_sell = False
 
-    # Advanced ICT Order Block Identification Engine
-    ob_bullish = False
-    ob_bearish = False
-    avg_tick_volume = df["Volume"].tail(20).mean()  
-    volume_expansion = df["Volume"].iloc[-1] > avg_tick_volume * 1.5  
+    if ote_buy_zone: 
+        fib_confluence_buy = True
+        reasons.append(f"Price targeted inside Golden Fibonacci Retracement Array: 61.8% ({round(fib_618,5)}) - 78.6% ({round(fib_786,5)}) Optimal Buy Entry.")  
+    if ote_sell_zone: 
+        fib_confluence_sell = True
+        reasons.append(f"Price targeted inside Golden Fibonacci Retracement Array: 61.8% ({round(fib_618,5)}) - 78.6% ({round(fib_786,5)}) Optimal Sell Entry.")  
 
-    for idx in range(-5, -1):
-        # Bullish OB: Last down candle before an aggressive upward vector break
-        if df["Close"].iloc[idx] < df["Open"].iloc[idx] and df["Close"].iloc[-1] > df["High"].iloc[idx]:
-            if price < df["High"].iloc[idx] and price > df["Low"].iloc[idx]:
-                ob_bullish = True
-        # Bearish OB: Last up candle before an aggressive downward vector break
-        if df["Close"].iloc[idx] > df["Open"].iloc[idx] and df["Close"].iloc[-1] < df["Low"].iloc[idx]:
-            if price > df["Low"].iloc[idx] and price < df["High"].iloc[idx]:
-                ob_bearish = True
-
-    if ob_bullish and price < fib_500:
-        structure_score_buy += 25
-        reasons.append("Mitigation of validated Bullish ICT Order Block inside Discount profile verified.")
-    if ob_bearish and price > fib_500:
-        structure_score_sell += 25
-        reasons.append("Mitigation of validated Bearish ICT Order Block inside Premium profile verified.")
-
-    # Liquidity Calculations  
     sweep_ssl = df["Low"].iloc[-1] < recent_low and price > recent_low  
     sweep_bsl = df["High"].iloc[-1] > recent_high and price < recent_high  
 
     if sweep_ssl: reasons.append("Sell-Side Liquidity (SSL) swept below the recent swing low cluster before rejection.")  
     if sweep_bsl: reasons.append("Buy-Side Liquidity (BSL) swept above the recent swing high cluster before rejection.")  
 
-    # FVG Detections  
     fvg_buy = df["Low"].iloc[-1] > df["High"].iloc[-3] and df["Close"].iloc[-2] > df["Open"].iloc[-2]  
     fvg_sell = df["High"].iloc[-1] < df["Low"].iloc[-3] and df["Close"].iloc[-2] < df["Open"].iloc[-2]  
+      
+    avg_tick_volume = df["Volume"].tail(20).mean()  
+    volume_expansion = df["Volume"].iloc[-1] > avg_tick_volume * 1.5  
 
     if fvg_buy:  
         v_status = "with institutional MT5 volume expansion confirmation" if volume_expansion else "lacking high tick volume validation"  
@@ -308,7 +312,6 @@ def compute_analytics_matrix(pair, df):
         v_status = "with institutional MT5 volume expansion confirmation" if volume_expansion else "lacking high tick volume validation"  
         reasons.append(f"A Bearish Fair Value Gap (FVG) validation pattern was localized {v_status}.")  
 
-    # Execution System Weight Confluences  
     buy_score = 25 if trend_bullish else 0  
     sell_score = 25 if trend_bearish else 0  
       
@@ -320,14 +323,14 @@ def compute_analytics_matrix(pair, df):
     if fvg_buy: buy_score += 20 if volume_expansion else 10  
     if fvg_sell: sell_score += 20 if volume_expansion else 10  
 
-    if ote_buy_zone: buy_score += 25  
-    else: buy_score = int(buy_score * 0.3)  
-          
-    if ote_sell_zone: sell_score += 25  
-    else: sell_score = int(sell_score * 0.3)  
+    if fib_confluence_buy: buy_score += 30  
+    else: buy_score = int(buy_score * 0.25)  
+        
+    if fib_confluence_sell: sell_score += 30  
+    else: sell_score = int(sell_score * 0.25)  
 
     session_label, is_killzone = system_session_and_killzone()  
-    killzone_multiplier = 1.3 if is_killzone else 0.8  
+    killzone_multiplier = 1.35 if is_killzone else 0.75  
     buy_score = int(buy_score * killzone_multiplier)  
     sell_score = int(sell_score * killzone_multiplier)  
 
@@ -336,40 +339,36 @@ def compute_analytics_matrix(pair, df):
     signal = "NEUTRAL"  
     confidence = max(buy_score, sell_score)  
 
-    if buy_score >= 65: signal = "STRONG ICT BUY"  
-    elif buy_score >= 45: signal = "ICT OTE BUY"  
-    elif sell_score >= 65: signal = "STRONG ICT SELL"  
-    elif sell_score >= 45: signal = "ICT OTE SELL"  
+    if buy_score >= 75: signal = "STRONG ICT BUY"  
+    elif buy_score >= 50: signal = "ICT OTE BUY"  
+    elif sell_score >= 75: signal = "STRONG ICT SELL"  
+    elif sell_score >= 50: signal = "ICT OTE SELL"  
 
     if signal == "NEUTRAL":  
         reasons.append("Insufficient confluence array weightings. Restricting system risk entry parameters.")  
 
-    # Volatility Risk Matrix Optimization Floor Engine (Minimum Floor = 10 Pips Enforced)
-    min_pips_floor = 10.0
+    pip_mult = 0.01 if "JPY" in pair.upper() else (0.10 if "XAU" in pair.upper() else 0.0001)  
+    minimum_pip_target = 12.0
+    min_delta_price = minimum_pip_target * pip_mult
+
     if "BUY" in signal:  
-        sl = recent_low - (2 * pip_mult)  
-        risk = price - sl if (price - sl) > 0 else (5 * pip_mult)  
-        tp_calculated = price + (risk * 2.1)  
-        if ((tp_calculated - price) / pip_mult) < min_pips_floor:
-            tp_calculated = price + (min_pips_floor * pip_mult)
-        tp = tp_calculated
+        sl = min(recent_low - (2 * pip_mult), price - min_delta_price / 2.5)
+        risk = price - sl if (price - sl) > 0 else min_delta_price / 2.5
+        tp = price + max(risk * 2.5, min_delta_price)
     elif "SELL" in signal:  
-        sl = recent_high + (2 * pip_mult)  
-        risk = sl - price if (sl - price) > 0 else (5 * pip_mult)  
-        tp_calculated = price - (risk * 2.1)  
-        if ((price - tp_calculated) / pip_mult) < min_pips_floor:
-            tp_calculated = price - (min_pips_floor * pip_mult)
-        tp = tp_calculated
+        sl = max(recent_high + (2 * pip_mult), price + min_delta_price / 2.5)
+        risk = sl - price if (sl - price) > 0 else min_delta_price / 2.5
+        tp = price - max(risk * 2.5, min_delta_price)
     else:  
         tp, sl = price, price  
 
     return {  
         "signal": signal, "confidence": min(round(confidence, 1), 100), "entry": round(price, 5),  
         "tp": round(tp, 5), "sl": round(sl, 5), "pips": round(abs(tp - price) / pip_mult, 1) if "NEUTRAL" not in signal else 0,  
-        "rsi": int(max(0, min(100, pct_position * 100))), "structure": smc_structure,  
+        "rsi": int(pct_position * 100), "structure": smc_structure,  
         "buy_score": min(buy_score, 100), "sell_score": min(sell_score, 100), "session": session_label,  
         "timestamp": datetime.now().strftime("%H:%M:%S"), "recent_high": round(recent_high, 5), "recent_low": round(recent_low, 5),  
-        "reasons": reasons, "fib_500": fib_500, "fib_618": fib_618, "fib_705": fib_705, "fib_786": fib_786
+        "reasons": reasons, "fib_618": round(fib_618, 5), "fib_786": round(fib_786, 5)
     }
 
 @st.fragment(run_every=4)
@@ -392,7 +391,7 @@ def background_telemetry_pipeline():
                 })  
                   
                 if not df_ltf.empty:  
-                    st.session_state.global_market_registry[pair]["df_ltf_slice"] = df_ltf.tail(60)  
+                    st.session_state.global_market_registry[pair]["df_ltf_slice"] = df_ltf.tail(45)  
                     st.session_state.global_market_registry[pair]["metrics"] = compute_analytics_matrix(pair, df_ltf)  
                       
         st.sidebar.markdown(f"<div style='font-family:JetBrains Mono; font-size:0.75rem; color:#64748B; text-align:center;'>TELEMETRY LINK SYNC: {datetime.now().strftime('%H:%M:%S')}</div>", unsafe_allow_html=True)  
@@ -402,10 +401,78 @@ def background_telemetry_pipeline():
 background_telemetry_pipeline()
 
 # =====================================================
+# TRADINGVIEW EMBED COMPONENTS ENGINE
+# =====================================================
+def render_tradingview_widget(pair):
+    """Generates an asynchronous institutional TradingView Advanced Widget frame."""
+    tv_symbol = f"FX:{pair}" if pair != "XAUUSD" else "OANDA:XAUUSD"
+    tv_html = f"""
+    <div class="tradingview-widget-container" style="height:450px;width:100%;">
+      <div id="tradingview_matrix"></div>
+      <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+      <script type="text/javascript">
+      new TradingView.widget({{
+        "width": "100%",
+        "height": 450,
+        "symbol": "{tv_symbol}",
+        "interval": "15",
+        "timezone": "Etc/UTC",
+        "theme": "dark",
+        "style": "1",
+        "locale": "en",
+        "enable_publishing": false,
+        "hide_side_toolbar": false,
+        "allow_symbol_change": true,
+        "container_id": "tradingview_matrix"
+      }});
+      </script>
+    </div>
+    """
+    components.html(tv_html, height=450)
+
+# =====================================================
+# MULTI-PAIR LIVE TRACKING SCANNER GRID
+# =====================================================
+@st.fragment(run_every=3)
+def render_market_scanner():
+    """Renders a structural dashboard matrix tracking all pairs simultaneously."""
+    st.markdown('<div class="premium-card">', unsafe_allow_html=True)
+    st.markdown("<span class='section-title'>🛰️ REAL-TIME SMC / ICT SCANNED MATRIX GRID</span>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-bottom:12px;'></div>", unsafe_allow_html=True)
+    
+    scan_cols = st.columns(len(pairs))
+    for idx, p in enumerate(pairs):
+        with scan_cols[idx]:
+            metrics = st.session_state.global_market_registry[p]["metrics"]
+            sig_lbl = metrics["signal"]
+            conf = metrics["confidence"]
+            
+            # Action Colors Mapping
+            if "BUY" in sig_lbl:
+                bg_color, text_color = "rgba(16, 185, 129, 0.1)", "#10B981"
+            elif "SELL" in sig_lbl:
+                bg_color, text_color = "rgba(239, 68, 68, 0.1)", "#EF4444"
+            else:
+                bg_color, text_color = "#0b1329", "#94A3B8"
+                
+            st.markdown(f"""
+            <div style='background:{bg_color}; border: 1px solid #1e293b; border-radius:8px; padding:12px; text-align:center;'>
+                <div style='font-weight:700; font-size:1.05rem; letter-spacing:0.02em;'>{p}</div>
+                <div style='color:{text_color}; font-size:0.8rem; font-weight:700; margin:6px 0;'>{sig_lbl}</div>
+                <div style='font-family:JetBrains Mono; font-size:1.1rem; font-weight:700; color:#38BDF8;'>{conf}%</div>
+                <div style='font-size:0.7rem; color:#64748B; margin-top:4px;'>Pips Target: {metrics['pips']}</div>
+            </div>
+            """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# =====================================================
 # ZERO-LATENCY HIGH-VISIBILITY RENDERING UI
 # =====================================================
 st.sidebar.markdown("<div style='margin-top:15px;'></div>", unsafe_allow_html=True)
 selected_pair = st.sidebar.selectbox("Active Stream Target", pairs)
+
+# Inject Global Scanner Matrix at the top
+render_market_scanner()
 
 @st.fragment(run_every=2)
 def render_live_dashboard(pair):
@@ -420,43 +487,51 @@ def render_live_dashboard(pair):
     if "STRONG" in result["signal"] and result["pips"] >= 10.0:  
         if result["signal"] != st.session_state.last_signal[pair]:  
             components.html('<audio autoplay style="display:none;"><source src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" type="audio/ogg"></audio>', height=0)  
-            st.toast(f"🚨 EXECUTABLE SMC QUANT SIGNAL ON {pair}!", icon="⚡")  
+            st.toast(f"🚨 CONFIRMED HIGH-ACCURACY SIGNAL ON {pair}!", icon="⚡")  
+            
+            send_telegram_notification(
+                pair=pair, signal=result["signal"], confidence=result["confidence"],
+                tp=result["tp"], sl=result["sl"], pips=result["pips"]
+            )
             st.session_state.last_signal[pair] = result["signal"]  
     else:  
         st.session_state.last_signal[pair] = None  
 
-    # Candlestick Plot  
-    fig = go.Figure()  
-    fig.add_trace(go.Candlestick(  
-        x=plot_df["time"], open=plot_df["Open"], high=plot_df["High"], low=plot_df["Low"], close=plot_df["Close"], name=pair,  
-        increasing_line_color='#10B981', increasing_fillcolor='#10B981',  
-        decreasing_line_color='#EF4444', decreasing_fillcolor='#EF4444'  
-    ))  
-      
-    if result["recent_high"] > 0:  
-        fig.add_hline(y=result["recent_high"], line_dash="dash", line_color="#F59E0B", opacity=0.4, annotation_text="SWING HIGH / FIB 0.0%")  
-        if "fib_500" in result:
-            fig.add_hline(y=result["fib_500"], line_dash="dot", line_color="#475569", opacity=0.5, annotation_text="EQUILIBRIUM 50.0%")
-            fig.add_hline(y=result["fib_618"], line_dash="dash", line_color="#38BDF8", opacity=0.3, annotation_text="OTE 61.8%")
-            fig.add_hline(y=result["fib_705"], line_dash="dash", line_color="#6366F1", opacity=0.5, annotation_text="OTE SWEET SPOT 70.5%")
-            fig.add_hline(y=result["fib_786"], line_dash="dash", line_color="#818CF8", opacity=0.3, annotation_text="OTE 78.6%")
-        fig.add_hline(y=result["recent_low"],  line_dash="dash", line_color="#06B6D4", opacity=0.4, annotation_text="SWING LOW / FIB 100.0%")  
+    # Structural Layout Split: Native Vector Quant Chart vs TradingView Chart Engine
+    tab_vector, tab_tv = st.tabs(["📊 NATIVE VECTOR MATRIX PLOT", "📈 TRADINGVIEW LIGHTWEIGHT CORE"])
+    
+    with tab_vector:
+        fig = go.Figure()  
+        fig.add_trace(go.Candlestick(  
+            x=plot_df["time"], open=plot_df["Open"], high=plot_df["High"], low=plot_df["Low"], close=plot_df["Close"], name=pair,  
+            increasing_line_color='#10B981', increasing_fillcolor='#10B981',  
+            decreasing_line_color='#EF4444', decreasing_fillcolor='#EF4444'  
+        ))  
+          
+        if result["recent_high"] > 0:  
+            fig.add_hline(y=result["recent_high"], line_dash="dash", line_color="#F59E0B", opacity=0.4, annotation_text="SWING HIGH", annotation_position="top left")  
+            fig.add_hline(y=result["recent_low"],  line_dash="dash", line_color="#06B6D4", opacity=0.4, annotation_text="SWING LOW", annotation_position="bottom left")  
+            fig.add_hline(y=result["fib_618"], line_dash="dot", line_color="#818CF8", opacity=0.5, annotation_text="FIB 61.8%", annotation_position="top right")
+            fig.add_hline(y=result["fib_786"], line_dash="dot", line_color="#4F46E5", opacity=0.5, annotation_text="FIB 78.6%", annotation_position="bottom right")
 
-    fig.update_layout(  
-        template="plotly_dark", height=380, xaxis_rangeslider_visible=False, uirevision=pair,  
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='#090d16',  
-        margin=dict(l=10, r=10, t=10, b=10)  
-    )  
-    fig.update_xaxes(showgrid=False)  
-    fig.update_yaxes(showgrid=True, gridcolor='#1e293b', side="right")  
-      
-    st.markdown('<div class="premium-card">', unsafe_allow_html=True)  
-    st.markdown(f"<div style='display:flex; justify-content:space-between; margin-bottom:16px;'><span class='section-title'>🛰️ SYSTEM MATRIX CORE: {pair}</span><span style='font-family:JetBrains Mono; color:#64748B;'>TICK: {result['timestamp']}</span></div>", unsafe_allow_html=True)  
-    st.plotly_chart(fig, use_container_width=True)  
+        fig.update_layout(  
+            template="plotly_dark", height=380, xaxis_rangeslider_visible=False, uirevision=pair,  
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='#090d16',  
+            margin=dict(l=10, r=10, t=10, b=10)  
+        )  
+        fig.update_xaxes(showgrid=False)  
+        fig.update_yaxes(showgrid=True, gridcolor='#1e293b', side="right")  
+        st.plotly_chart(fig, use_container_width=True)  
+
+    with tab_tv:
+        render_tradingview_widget(pair)
       
     # Custom Grid Metrics Row Layout  
     color_hex = "#10B981" if "BUY" in result["signal"] else ("#EF4444" if "SELL" in result["signal"] else "#94A3B8")  
       
+    st.markdown('<div class="premium-card">', unsafe_allow_html=True)
+    st.markdown(f"<div style='display:flex; justify-content:space-between; margin-bottom:16px;'><span class='section-title'>🛰️ MATRIX INSTRUMENT METRICS: {pair}</span><span style='font-family:JetBrains Mono; color:#64748B;'>TICK: {result['timestamp']}</span></div>", unsafe_allow_html=True)  
+    
     c1, c2, c3, c4 = st.columns(4)  
     with c1:  
         st.markdown(f"""<div class='custom-metric'>  
@@ -476,14 +551,17 @@ def render_live_dashboard(pair):
     with c4:  
         st.markdown(f"""<div class='custom-metric'>  
             <div class='metric-label'>Target Parameters</div>  
-            <div class='metric-value' style='color: #818CF8; font-size:1.1rem !important;'>TP: {result['tp']}<br>SL: {result['sl']}</div>  
+            <div class='metric-value' style='color: #F8FAFC; font-size:1.1rem !important;'>TP: {result['tp']}<br><span style='color:#94A3B8; font-size:0.75rem;'>SL: {result['sl']}</span></div>  
         </div>""", unsafe_allow_html=True)  
 
-    # Live Execution Framework Logs Below Chart
-    st.markdown('<div class="reasoning-box">', unsafe_allow_html=True)
-    st.markdown("<p style='font-family:JetBrains Mono; font-size:0.85rem; color:#38BDF8; font-weight:700; margin:0;'>📜 QUANT ENGINE SIGNAL RATIONALE LOGS:</p>", unsafe_allow_html=True)
-    for reason in result["reasons"]:
-        st.markdown(f"<p style='font-family:JetBrains Mono; font-size:0.75rem; color:#94A3B8; margin:4px 0;'>• {reason}</p>", unsafe_allow_html=True)
-    st.markdown('</div></div>', unsafe_allow_html=True)
+    st.markdown(f"""  
+    <div class='reasoning-box'>  
+        <div style='font-size:0.8rem; text-transform:uppercase; color:#38BDF8; font-weight:700; letter-spacing:0.05em; margin-bottom:8px;'>Structural Telemetry Logs</div>  
+        <div style='font-family:JetBrains Mono; font-size:0.85rem; color:#E2E8F0; line-height:1.6;'>  
+            {"<br>".join([f"• {r}" for r in result['reasons']])}  
+        </div>  
+    </div>  
+    </div>  
+    """, unsafe_allow_html=True)  
 
 render_live_dashboard(selected_pair)
