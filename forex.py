@@ -566,7 +566,6 @@
 
 # render_live_dashboard(selected_pair)
 
-
 import os
 from datetime import datetime, timezone
 import time
@@ -748,16 +747,12 @@ def send_telegram_notification(pair, signal, confidence, tp, sl, pips, entry):
     if not bot_token or not chat_id:
         return False
         
-    # Visual displacement layouts for position mapping reference
     if "BUY" in signal:
         image_url = "https://raw.githubusercontent.com/tradingview/patterns/main/long_position_guide.png"
-        action_emoji = "🟢 LONG DISPLACEMENT POSITION"
     elif "SELL" in signal:
         image_url = "https://raw.githubusercontent.com/tradingview/patterns/main/short_position_guide.png"
-        action_emoji = "🔴 SHORT DISPLACEMENT POSITION"
     else:
         image_url = "https://raw.githubusercontent.com/tradingview/patterns/main/consolidation_guide.png"
-        action_emoji = "⚪ NEUTRAL / NO CURRENT BIAS"
 
     message = (
         f"🚨 *VECTOR MATRIX PRO ALPHA SIGNAL*\n\n"
@@ -1016,7 +1011,6 @@ selected_pair = st.sidebar.selectbox("Active Stream Target", pairs)
 # Inject Global Scanner Matrix
 render_market_scanner()
 
-@st.fragment(run_every=2)
 def render_live_dashboard(pair):
     cached_node = st.session_state.global_market_registry[pair]  
     plot_df = cached_node["df_ltf_slice"]  
@@ -1068,14 +1062,13 @@ def render_live_dashboard(pair):
 
     # Operational Management Column (Manual Override Telegram Broadcaster Button)
     with control_view:
-        st.markdown('<div class="premium-card" style="height:435px;">', unsafe_allow_html=True)
+        st.markdown('<div class="premium-card" style="height:435px; margin-bottom:0px;">', unsafe_allow_html=True)
         st.markdown("<span class='section-title'>🎮 OVERRIDE CONTROL</span>", unsafe_allow_html=True)
-        st.markdown("<p style='font-size:0.8rem; color:#94A3B8;'>Manually force broadcast current live parameters to your subscribers.</p>", unsafe_allow_html=True)
-        st.markdown("<div style='margin-top:25px;'></div>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size:0.8rem; color:#94A3B8; margin-bottom:15px;'>Manually force broadcast current live parameters to your subscribers.</p>", unsafe_allow_html=True)
         
         # Interactive Control Interface Trigger Button
         btn_label = f"📤 BROADCAST {pair} SIGNAL"
-        if st.button(btn_label, use_container_width=True):
+        if st.button(btn_label, use_container_width=True, key="manual_broadcast_trigger"):
             with st.spinner("Processing Matrix Packets..."):
                 status = send_telegram_notification(
                     pair=pair, signal=result["signal"], confidence=result["confidence"],
@@ -1084,7 +1077,7 @@ def render_live_dashboard(pair):
                 if status:
                     st.success(f"Successfully sent {pair} blueprint photo layout!")
                 else:
-                    st.error("Broadcast failed. Confirm Telegram Secrets Configuration tokens.")
+                    st.error("Broadcast failed. Confirm Telegram Secrets Tokens.")
         
         st.markdown("<div style='margin-top:20px; border-top:1px solid #1e293b; padding-top:15px;'></div>", unsafe_allow_html=True)
         st.markdown(f"""
@@ -1121,3 +1114,7 @@ def render_live_dashboard(pair):
     """, unsafe_allow_html=True)  
 
 render_live_dashboard(selected_pair)
+
+# Global Smooth UI Loop Stream 
+time.sleep(2)
+st.rerun()
