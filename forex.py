@@ -9,6 +9,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import yfinance as yf
 import streamlit.components.v1 as components
+import google.generativeai as genai
 
 # =====================================================
 # SYSTEM DESIGN & ULTRA-DARK ARCHITECTURAL INTERFACE
@@ -118,6 +119,11 @@ ticker_mapping = {
     "USDJPY": "JPY=X", "AUDUSD": "AUDUSD=X", "XAUUSD": "GC=F"
 }
 
+# Configure Gemini AI SDK using Streamlit Secrets Key
+gemini_key = st.secrets.get("GEMINI_API_KEY", "")
+if gemini_key:
+    genai.configure(api_key=gemini_key)
+
 if "global_market_registry" not in st.session_state:
     st.session_state.global_market_registry = {  
         p: {  
@@ -126,7 +132,7 @@ if "global_market_registry" not in st.session_state:
                 "signal": "INITIALIZING MATRIX", "confidence": 0, "entry": 0, "tp": 0, "sl": 0,  
                 "pips": 0, "rsi": 50, "structure": "ESTABLISHING CORE LINK", "buy_score": 0, "sell_score": 0,  
                 "session": "UNKNOWN", "timestamp": "CALIBRATING FLOW", "recent_high": 0, "recent_low": 0,  
-                "reasons": [], "fib_618": 0, "fib_786": 0, "ai_validation": "PENDING EVALUATION", "duration": "N/A"
+                "reasons": [], "fib_618": 0, "fib_786": 0, "duration": "N/A"
             }  
         } for p in pairs  
     }
@@ -171,7 +177,7 @@ if not st.session_state.logged_in:
 # =====================================================
 # TELEGRAM MULTI-CHANNEL PHOTO BROADCAST ENGINE
 # =====================================================
-def send_telegram_notification(pair, signal, confidence, tp, sl, pips, entry, ai_val, duration):
+def send_telegram_notification(pair, signal, confidence, tp, sl, pips, entry, duration):
     """Broadcasts calculated market parameters to all chat IDs found in secrets."""
     bot_token = st.secrets.get("BOT_TOKEN", "")
     chat_ids = st.secrets.get("CHAT_IDS", [])
@@ -187,13 +193,12 @@ def send_telegram_notification(pair, signal, confidence, tp, sl, pips, entry, ai
         image_url = "https://raw.githubusercontent.com/tradingview/patterns/main/consolidation_guide.png"
 
     message = (
-        f"🚨 *VECTOR MATRIX PRO ALPHA SIGNAL*\n\n"
+        f"🚨 *AI-VALIDATED VECTOR MATRIX PRO SIGNAL*\n\n"
         f"📊 *Asset Pair:* {pair}\n"
         f"⚡ *Action Bias:* {signal}\n"
+        f"⏳ *Expected Duration:* {duration}\n"
         f"🎯 *Confluence Score:* {confidence}%\n"
-        f"📏 *Target Distance:* {pips} Pips\n"
-        f"🤖 *AI Validation Check:* {ai_val}\n"
-        f"⏳ *Expected Market Horizon:* {duration}\n\n"
+        f"📏 *Target Distance:* {pips} Pips\n\n"
         f"📐 *LIVE MARKET PLACEMENT METRICS:*\n"
         f"🔹 *Entry Threshold:* {entry}\n"
         f"🟢 *Take Profit:* {tp}\n"
@@ -222,6 +227,66 @@ def send_telegram_notification(pair, signal, confidence, tp, sl, pips, entry, ai
     return all_successful
 
 # =====================================================
+# GEMINI GENERATIVE AI DIRECT DIRECTIONAL VALIDATOR
+# =====================================================
+def validate_direction_with_gemini(pair, current_price, current_rsi, smc_structure, structural_reasons, history_df):
+    """Leverages structural data arrays to validate market trend permanence and filter noise."""
+    if not st.secrets.get("GEMINI_API_KEY", ""):
+        return {"validated_signal": "NEUTRAL (AI UNCONFIGURED)", "duration": "N/A", "confidence_override": 50, "analysis": "Add GEMINI_API_KEY to secrets."}
+    
+    # Compress history dataframe to reduce token costs while keeping context
+    history_summary = history_df.tail(15)[["time", "Open", "High", "Low", "Close"]].to_string()
+    
+    prompt = f"""
+    You are an institutional FX algorithmic trading assistant checking for high-probability structural setups.
+    We only trade setups that yield > 10 pips and stay in profit for a clear macro duration. We filter out minor 1-minute noise.
+
+    Market Data for {pair}:
+    - Current Price: {current_price}
+    - Calculated Matrix RSI Position: {current_rsi}
+    - Math Rule Structure: {smc_structure}
+    - Derived Metrics Confluences: {", ".join(structural_reasons)}
+    
+    Recent historical OHLC structural trend matrix bars:
+    {history_summary}
+
+    Task:
+    Evaluate if this structure is fully valid or just temporary retail manipulation noise.
+    Determine the immediate macro bias (BUY, SELL, or NEUTRAL), the reliability confidence scale, and how long this direction will last before structural invalidation (e.g., 45 Minutes, 2 Hours, 4 Hours, 12 Hours).
+
+    Return ONLY a valid minified JSON object with these keys:
+    "direction": (Must be either "BUY", "SELL", or "NEUTRAL")
+    "is_valid": (true or false)
+    "duration": (e.g. "2 Hours", "4 Hours", "N/A")
+    "confidence": (An integer score from 0 to 100)
+    "reason": (One clear sentence explaining structural invalidation context)
+    """
+    
+    try:
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt)
+        cleaned_text = response.text.replace("```json", "").replace("```", "").strip()
+        data = json.loads(cleaned_text)
+        
+        direction_label = "NEUTRAL"
+        if data.get("is_valid") and data.get("direction") in ["BUY", "SELL"]:
+            direction_label = f"AI {data.get('direction')}"
+            
+        return {
+            "validated_signal": direction_label,
+            "duration": data.get("duration", "UNKNOWN"),
+            "confidence_override": data.get("confidence", 50),
+            "analysis": data.get("reason", "No structural reasons logged.")
+        }
+    except Exception as e:
+        return {
+            "validated_signal": "NEUTRAL",
+            "duration": "N/A",
+            "confidence_override": 0,
+            "analysis": f"AI Parsing Exception: {str(e)}"
+        }
+
+# =====================================================
 # INSTITUTIONAL SMC/ICT/FIBONACCI TELEMETRY ENGINE
 # =====================================================
 def system_session_and_killzone():
@@ -238,7 +303,7 @@ def system_session_and_killzone():
     return "CLOSED (RESTRICTED SYSTEM)", False
 
 def compute_analytics_matrix(pair, df):
-    if df.empty or len(df) < 50:  
+    if df.empty or len(df) < 45:  
         return st.session_state.global_market_registry[pair]["metrics"]  
 
     reasons = []  
@@ -299,10 +364,10 @@ def compute_analytics_matrix(pair, df):
 
     if ote_buy_zone:  
         fib_confluence_buy = True
-        reasons.append(f"Price targeted inside Golden Fibonacci Retracement Array: 61.8% ({round(fib_618,5)}) - 78.6% ({round(fib_786,5)}) Optimal Buy Entry.")  
+        reasons.append(f"Price inside Golden Fibonacci Retracement Array: 61.8% ({round(fib_618,5)}) OTE Buy.")  
     if ote_sell_zone:  
         fib_confluence_sell = True
-        reasons.append(f"Price targeted inside Golden Fibonacci Retracement Array: 61.8% ({round(fib_618,5)}) - 78.6% ({round(fib_786,5)}) Optimal Sell Entry.")  
+        reasons.append(f"Price inside Golden Fibonacci Retracement Array: 61.8% ({round(fib_618,5)}) OTE Sell.")  
 
     sweep_ssl = df["Low"].iloc[-1] < recent_low and price > recent_low  
     sweep_bsl = df["High"].iloc[-1] > recent_high and price < recent_high  
@@ -333,72 +398,47 @@ def compute_analytics_matrix(pair, df):
     buy_score = int(buy_score * killzone_multiplier)  
     sell_score = int(sell_score * killzone_multiplier)  
 
-    signal = "NEUTRAL"  
-    confidence = max(buy_score, sell_score)  
-
-    if buy_score >= 75: signal = "STRONG ICT BUY"  
-    elif buy_score >= 50: signal = "ICT OTE BUY"  
-    elif sell_score >= 75: signal = "STRONG ICT SELL"  
-    elif sell_score >= 50: signal = "ICT OTE SELL"  
+    # =====================================================
+    # AI CRITICAL DIRECT ENGINE OVERLAY VALIDATION
+    # =====================================================
+    calculated_rsi_metric = int(pct_position * 100) if 0 <= pct_position <= 1 else 50
+    ai_validation = validate_direction_with_gemini(
+        pair=pair, current_price=price, current_rsi=calculated_rsi_metric, 
+        smc_structure=smc_structure, structural_reasons=reasons, history_df=df
+    )
+    
+    signal = ai_validation["validated_signal"]
+    confidence = ai_validation["confidence_override"]
+    reasons.append(f"AI Core Structural Diagnosis: {ai_validation['analysis']}")
 
     pip_mult = 0.01 if "JPY" in pair.upper() else (0.10 if "XAU" in pair.upper() else 0.0001)  
     
-    # -------------------------------------------------
-    # ENFORCED RULES: >10 PIP PREDICTION & DURATION ENGINE
-    # -------------------------------------------------
-    minimum_pip_target = 14.5  # Dynamic institutional projection > 10 Pips
+    # Absolute minimum threshold parameter forced to filter market noise (15.0 Pips target setup)
+    minimum_pip_target = 15.0
     min_delta_price = minimum_pip_target * pip_mult
-
-    # Calculated Volatility Horizon (True Range Processing)
-    high_low_delta = df["High"] - df["Low"]
-    atr = high_low_delta.tail(14).mean()
-    atr_pips = atr / pip_mult if atr > 0 else 5.0
-
-    ai_validation = "INVALID DIRECTION MATRIX"
-    duration_label = "N/A"
 
     if "BUY" in signal:  
         sl = min(recent_low - (2 * pip_mult), price - min_delta_price / 2.5)
         risk = price - sl if (price - sl) > 0 else min_delta_price / 2.5
         tp = price + max(risk * 2.5, min_delta_price)
-        
-        # AI Validation check: Matches long term bias and structural matrix confirmation
-        if trend_bullish and confidence >= 60:
-            ai_validation = "✅ VALIDATED (BULLISH CONFLUENCE)"
-            # Compute holding duration based on 15m structural bars to reach target safely
-            est_bars = max(3, int(minimum_pip_target / (atr_pips * 0.4)))
-            duration_label = f"~ {est_bars * 15} MIN (STABLE APPRECIATION)"
-        else:
-            signal = "NEUTRAL" # Suppress false rapid flips
-
     elif "SELL" in signal:  
         sl = max(recent_high + (2 * pip_mult), price + min_delta_price / 2.5)
         risk = sl - price if (sl - price) > 0 else min_delta_price / 2.5
         tp = price - max(risk * 2.5, min_delta_price)
-        
-        if trend_bearish and confidence >= 60:
-            ai_validation = "✅ VALIDATED (BEARISH CONFLUENCE)"
-            est_bars = max(3, int(minimum_pip_target / (atr_pips * 0.4)))
-            duration_label = f"~ {est_bars * 15} MIN (STABLE DEPRECIATION)"
-        else:
-            signal = "NEUTRAL"
-
     else:  
         tp, sl = price, price  
 
-    calculated_pips = round(abs(tp - price) / pip_mult, 1) if "NEUTRAL" not in signal else 0
-
     return {  
         "signal": signal, "confidence": min(round(confidence, 1), 100), "entry": round(price, 5),  
-        "tp": round(tp, 5), "sl": round(sl, 5), "pips": calculated_pips,  
-        "rsi": int(pct_position * 100), "structure": smc_structure,  
+        "tp": round(tp, 5), "sl": round(sl, 5), "pips": round(abs(tp - price) / pip_mult, 1) if "NEUTRAL" not in signal else 0,  
+        "rsi": calculated_rsi_metric, "structure": smc_structure,  
         "buy_score": min(buy_score, 100), "sell_score": min(sell_score, 100), "session": session_label,  
         "timestamp": datetime.now().strftime("%H:%M:%S"), "recent_high": round(recent_high, 5), "recent_low": round(recent_low, 5),  
         "reasons": reasons, "fib_618": round(fib_618, 5), "fib_786": round(fib_786, 5),
-        "ai_validation": ai_validation, "duration": duration_label
+        "duration": ai_validation["duration"]
     }
 
-@st.fragment(run_every=4)
+@st.fragment(run_every=10) # Reduced interval frequency to conserve API rate limits
 def background_telemetry_pipeline():
     symbols_to_fetch = list(ticker_mapping.values())  
     try:  
@@ -449,7 +489,7 @@ def render_tradingview_widget(pair):
 # =====================================================
 # MULTI-PAIR LIVE TRACKING SCANNER GRID
 # =====================================================
-@st.fragment(run_every=3)
+@st.fragment(run_every=5)
 def render_market_scanner():
     st.markdown('<div class="premium-card">', unsafe_allow_html=True)
     st.markdown("<span class='section-title'>🛰️ REAL-TIME SMC / ICT SCANNED MATRIX GRID</span>", unsafe_allow_html=True)
@@ -493,16 +533,16 @@ def render_live_dashboard(pair):
         st.info("Synchronizing multi-timeframe vectors with system node parameters...")  
         return  
 
-    # Automated Trigger Channel Alignment
-    if "STRONG" in result["signal"] and result["pips"] >= 10.0 and "✅" in result["ai_validation"]:  
+    # Dispatch to Telegram if AI validation passes and target distance meets your criteria (>10 pips)
+    if ("BUY" in result["signal"] or "SELL" in result["signal"]) and result["pips"] >= 10.0:  
         if result["signal"] != st.session_state.last_signal[pair]:  
             components.html('<audio autoplay style="display:none;"><source src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" type="audio/ogg"></audio>', height=0)  
-            st.toast(f"🚨 AUTO-DISPATCHED CONFIRMED HIGH-ACCURACY SIGNAL ON {pair}!", icon="⚡")  
+            st.toast(f"🚨 AUTO-DISPATCHED CONFIRMED AI STRUCTURAL SIGNAL ON {pair}!", icon="⚡")  
             
             send_telegram_notification(
                 pair=pair, signal=result["signal"], confidence=result["confidence"],
                 tp=result["tp"], sl=result["sl"], pips=result["pips"], entry=result["entry"],
-                ai_val=result["ai_validation"], duration=result["duration"]
+                duration=result["duration"]
             )
             st.session_state.last_signal[pair] = result["signal"]  
     else:  
@@ -534,7 +574,6 @@ def render_live_dashboard(pair):
         with tab_tv:
             render_tradingview_widget(pair)
 
-    # Operational Management Column
     with control_view:
         with st.container(border=True):
             st.markdown("<span class='section-title' style='display:block; margin-top:5px;'>🎮 OVERRIDE CONTROL</span>", unsafe_allow_html=True)
@@ -546,7 +585,7 @@ def render_live_dashboard(pair):
                     status = send_telegram_notification(
                         pair=pair, signal=result["signal"], confidence=result["confidence"],
                         tp=result["tp"], sl=result["sl"], pips=result["pips"], entry=result["entry"],
-                        ai_val=result["ai_validation"], duration=result["duration"]
+                        duration=result["duration"]
                     )
                     if status:
                         st.success(f"Broadcasted to channels successfully!")
@@ -556,12 +595,11 @@ def render_live_dashboard(pair):
             st.markdown("<div style='margin-top:15px; border-top:1px solid #334155; padding-top:15px;'></div>", unsafe_allow_html=True)
             st.markdown(f"""
             <div style='font-family:JetBrains Mono; font-size:0.75rem; color:#94A3B8; padding-bottom:5px;'>
-                <b>AI Telemetry Vector:</b> <span style='color:#38BDF8;'>{result['ai_validation']}</span><br>
-                <b>Horizon Horizon:</b> <span style='color:#F59E0B;'>{result['duration']}</span><br><br>
                 <b>Payload Cache Tracker:</b><br>
                 • Entry Vector: {result['entry']}<br>
                 • Limit Target: {result['tp']}<br>
-                • Invalidation: {result['sl']}
+                • Invalidation: {result['sl']}<br>
+                • AI Expected Duration: {result['duration']}
             </div>
             """, unsafe_allow_html=True)
       
@@ -570,9 +608,9 @@ def render_live_dashboard(pair):
     st.markdown('<div class="premium-card">', unsafe_allow_html=True)  
     c1, c2, c3, c4 = st.columns(4)  
     with c1:  
-        st.markdown(f"<div class='custom-metric'><div class='metric-label'>Matrix Vector Bias</div><div class='metric-value' style='color: {color_hex};'>{result['signal']}</div></div>", unsafe_allow_html=True)  
+        st.markdown(f"<div class='custom-metric'><div class='metric-label'>Matrix Bias (AI)</div><div class='metric-value' style='color: {color_hex};'>{result['signal']}</div></div>", unsafe_allow_html=True)  
     with c2:  
-        st.markdown(f"<div class='custom-metric'><div class='metric-label'>AI Horizon Check</div><div class='metric-value' style='color: #06B6D4; font-size:1.1rem !important;'>{result['ai_validation']}<br><span style='color:#94A3B8; font-size:0.75rem;'>Holding: {result['duration']}</span></div></div>", unsafe_allow_html=True)  
+        st.markdown(f"<div class='custom-metric'><div class='metric-label'>AI Macro Duration</div><div class='metric-value' style='color: #06B6D4;'>{result['duration']}</div></div>", unsafe_allow_html=True)  
     with c3:  
         st.markdown(f"<div class='custom-metric'><div class='metric-label'>Calculated Pip Distance</div><div class='metric-value' style='color: #F59E0B;'>{result['pips']} Pips</div></div>", unsafe_allow_html=True)  
     with c4:  
@@ -591,5 +629,5 @@ def render_live_dashboard(pair):
 render_live_dashboard(selected_pair)
 
 # Global Smooth UI Loop Stream 
-time.sleep(2)
+time.sleep(5)
 st.rerun()
