@@ -16,7 +16,7 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="VECTOR MATRIX PRO", page_icon="🏦", layout="wide")
 st.markdown("""
 <style>  
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');  
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght=400;500;700&family=Space+Grotesk:wght=400;500;600;700&display=swap');  
       
     html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {  
         background-color: #030712 !important;  
@@ -126,7 +126,7 @@ if "global_market_registry" not in st.session_state:
                 "signal": "INITIALIZING MATRIX", "confidence": 0, "entry": 0, "tp": 0, "sl": 0,  
                 "pips": 0, "rsi": 50, "structure": "ESTABLISHING CORE LINK", "buy_score": 0, "sell_score": 0,  
                 "session": "UNKNOWN", "timestamp": "CALIBRATING FLOW", "recent_high": 0, "recent_low": 0,  
-                "reasons": [], "fib_618": 0, "fib_786": 0
+                "reasons": [], "fib_618": 0, "fib_786": 0, "ai_validation": "PENDING EVALUATION", "duration": "N/A"
             }  
         } for p in pairs  
     }
@@ -171,7 +171,7 @@ if not st.session_state.logged_in:
 # =====================================================
 # TELEGRAM MULTI-CHANNEL PHOTO BROADCAST ENGINE
 # =====================================================
-def send_telegram_notification(pair, signal, confidence, tp, sl, pips, entry):
+def send_telegram_notification(pair, signal, confidence, tp, sl, pips, entry, ai_val, duration):
     """Broadcasts calculated market parameters to all chat IDs found in secrets."""
     bot_token = st.secrets.get("BOT_TOKEN", "")
     chat_ids = st.secrets.get("CHAT_IDS", [])
@@ -191,7 +191,9 @@ def send_telegram_notification(pair, signal, confidence, tp, sl, pips, entry):
         f"📊 *Asset Pair:* {pair}\n"
         f"⚡ *Action Bias:* {signal}\n"
         f"🎯 *Confluence Score:* {confidence}%\n"
-        f"📏 *Target Distance:* {pips} Pips\n\n"
+        f"📏 *Target Distance:* {pips} Pips\n"
+        f"🤖 *AI Validation Check:* {ai_val}\n"
+        f"⏳ *Expected Market Horizon:* {duration}\n\n"
         f"📐 *LIVE MARKET PLACEMENT METRICS:*\n"
         f"🔹 *Entry Threshold:* {entry}\n"
         f"🟢 *Take Profit:* {tp}\n"
@@ -295,10 +297,10 @@ def compute_analytics_matrix(pair, df):
     fib_confluence_buy = False
     fib_confluence_sell = False
 
-    if ote_buy_zone: 
+    if ote_buy_zone:  
         fib_confluence_buy = True
         reasons.append(f"Price targeted inside Golden Fibonacci Retracement Array: 61.8% ({round(fib_618,5)}) - 78.6% ({round(fib_786,5)}) Optimal Buy Entry.")  
-    if ote_sell_zone: 
+    if ote_sell_zone:  
         fib_confluence_sell = True
         reasons.append(f"Price targeted inside Golden Fibonacci Retracement Array: 61.8% ({round(fib_618,5)}) - 78.6% ({round(fib_786,5)}) Optimal Sell Entry.")  
 
@@ -340,27 +342,60 @@ def compute_analytics_matrix(pair, df):
     elif sell_score >= 50: signal = "ICT OTE SELL"  
 
     pip_mult = 0.01 if "JPY" in pair.upper() else (0.10 if "XAU" in pair.upper() else 0.0001)  
-    minimum_pip_target = 12.0
+    
+    # -------------------------------------------------
+    # ENFORCED RULES: >10 PIP PREDICTION & DURATION ENGINE
+    # -------------------------------------------------
+    minimum_pip_target = 14.5  # Dynamic institutional projection > 10 Pips
     min_delta_price = minimum_pip_target * pip_mult
+
+    # Calculated Volatility Horizon (True Range Processing)
+    high_low_delta = df["High"] - df["Low"]
+    atr = high_low_delta.tail(14).mean()
+    atr_pips = atr / pip_mult if atr > 0 else 5.0
+
+    ai_validation = "INVALID DIRECTION MATRIX"
+    duration_label = "N/A"
 
     if "BUY" in signal:  
         sl = min(recent_low - (2 * pip_mult), price - min_delta_price / 2.5)
         risk = price - sl if (price - sl) > 0 else min_delta_price / 2.5
         tp = price + max(risk * 2.5, min_delta_price)
+        
+        # AI Validation check: Matches long term bias and structural matrix confirmation
+        if trend_bullish and confidence >= 60:
+            ai_validation = "✅ VALIDATED (BULLISH CONFLUENCE)"
+            # Compute holding duration based on 15m structural bars to reach target safely
+            est_bars = max(3, int(minimum_pip_target / (atr_pips * 0.4)))
+            duration_label = f"~ {est_bars * 15} MIN (STABLE APPRECIATION)"
+        else:
+            signal = "NEUTRAL" # Suppress false rapid flips
+
     elif "SELL" in signal:  
         sl = max(recent_high + (2 * pip_mult), price + min_delta_price / 2.5)
         risk = sl - price if (sl - price) > 0 else min_delta_price / 2.5
         tp = price - max(risk * 2.5, min_delta_price)
+        
+        if trend_bearish and confidence >= 60:
+            ai_validation = "✅ VALIDATED (BEARISH CONFLUENCE)"
+            est_bars = max(3, int(minimum_pip_target / (atr_pips * 0.4)))
+            duration_label = f"~ {est_bars * 15} MIN (STABLE DEPRECIATION)"
+        else:
+            signal = "NEUTRAL"
+
     else:  
         tp, sl = price, price  
 
+    calculated_pips = round(abs(tp - price) / pip_mult, 1) if "NEUTRAL" not in signal else 0
+
     return {  
         "signal": signal, "confidence": min(round(confidence, 1), 100), "entry": round(price, 5),  
-        "tp": round(tp, 5), "sl": round(sl, 5), "pips": round(abs(tp - price) / pip_mult, 1) if "NEUTRAL" not in signal else 0,  
+        "tp": round(tp, 5), "sl": round(sl, 5), "pips": calculated_pips,  
         "rsi": int(pct_position * 100), "structure": smc_structure,  
         "buy_score": min(buy_score, 100), "sell_score": min(sell_score, 100), "session": session_label,  
         "timestamp": datetime.now().strftime("%H:%M:%S"), "recent_high": round(recent_high, 5), "recent_low": round(recent_low, 5),  
-        "reasons": reasons, "fib_618": round(fib_618, 5), "fib_786": round(fib_786, 5)
+        "reasons": reasons, "fib_618": round(fib_618, 5), "fib_786": round(fib_786, 5),
+        "ai_validation": ai_validation, "duration": duration_label
     }
 
 @st.fragment(run_every=4)
@@ -459,14 +494,15 @@ def render_live_dashboard(pair):
         return  
 
     # Automated Trigger Channel Alignment
-    if "STRONG" in result["signal"] and result["pips"] >= 10.0:  
+    if "STRONG" in result["signal"] and result["pips"] >= 10.0 and "✅" in result["ai_validation"]:  
         if result["signal"] != st.session_state.last_signal[pair]:  
             components.html('<audio autoplay style="display:none;"><source src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" type="audio/ogg"></audio>', height=0)  
             st.toast(f"🚨 AUTO-DISPATCHED CONFIRMED HIGH-ACCURACY SIGNAL ON {pair}!", icon="⚡")  
             
             send_telegram_notification(
                 pair=pair, signal=result["signal"], confidence=result["confidence"],
-                tp=result["tp"], sl=result["sl"], pips=result["pips"], entry=result["entry"]
+                tp=result["tp"], sl=result["sl"], pips=result["pips"], entry=result["entry"],
+                ai_val=result["ai_validation"], duration=result["duration"]
             )
             st.session_state.last_signal[pair] = result["signal"]  
     else:  
@@ -498,19 +534,19 @@ def render_live_dashboard(pair):
         with tab_tv:
             render_tradingview_widget(pair)
 
-    # Operational Management Column - FULLY NATIVE FIX TO FORCE CONTROLS INSIDE THE FRAME
+    # Operational Management Column
     with control_view:
         with st.container(border=True):
             st.markdown("<span class='section-title' style='display:block; margin-top:5px;'>🎮 OVERRIDE CONTROL</span>", unsafe_allow_html=True)
             st.markdown("<p style='font-size:0.8rem; color:#94A3B8; margin-bottom:15px;'>Manually force broadcast current live parameters to your subscribers.</p>", unsafe_allow_html=True)
             
-            # Interactive Control Interface Trigger Button
             btn_label = f"📤 BROADCAST {pair} SIGNAL"
             if st.button(btn_label, use_container_width=True, key="manual_broadcast_trigger"):
                 with st.spinner("Dispatching Matrix Packets to Network..."):
                     status = send_telegram_notification(
                         pair=pair, signal=result["signal"], confidence=result["confidence"],
-                        tp=result["tp"], sl=result["sl"], pips=result["pips"], entry=result["entry"]
+                        tp=result["tp"], sl=result["sl"], pips=result["pips"], entry=result["entry"],
+                        ai_val=result["ai_validation"], duration=result["duration"]
                     )
                     if status:
                         st.success(f"Broadcasted to channels successfully!")
@@ -520,6 +556,8 @@ def render_live_dashboard(pair):
             st.markdown("<div style='margin-top:15px; border-top:1px solid #334155; padding-top:15px;'></div>", unsafe_allow_html=True)
             st.markdown(f"""
             <div style='font-family:JetBrains Mono; font-size:0.75rem; color:#94A3B8; padding-bottom:5px;'>
+                <b>AI Telemetry Vector:</b> <span style='color:#38BDF8;'>{result['ai_validation']}</span><br>
+                <b>Horizon Horizon:</b> <span style='color:#F59E0B;'>{result['duration']}</span><br><br>
                 <b>Payload Cache Tracker:</b><br>
                 • Entry Vector: {result['entry']}<br>
                 • Limit Target: {result['tp']}<br>
@@ -534,7 +572,7 @@ def render_live_dashboard(pair):
     with c1:  
         st.markdown(f"<div class='custom-metric'><div class='metric-label'>Matrix Vector Bias</div><div class='metric-value' style='color: {color_hex};'>{result['signal']}</div></div>", unsafe_allow_html=True)  
     with c2:  
-        st.markdown(f"<div class='custom-metric'><div class='metric-label'>SMC Confluence</div><div class='metric-value' style='color: #06B6D4;'>{result['confidence']}%</div></div>", unsafe_allow_html=True)  
+        st.markdown(f"<div class='custom-metric'><div class='metric-label'>AI Horizon Check</div><div class='metric-value' style='color: #06B6D4; font-size:1.1rem !important;'>{result['ai_validation']}<br><span style='color:#94A3B8; font-size:0.75rem;'>Holding: {result['duration']}</span></div></div>", unsafe_allow_html=True)  
     with c3:  
         st.markdown(f"<div class='custom-metric'><div class='metric-label'>Calculated Pip Distance</div><div class='metric-value' style='color: #F59E0B;'>{result['pips']} Pips</div></div>", unsafe_allow_html=True)  
     with c4:  
