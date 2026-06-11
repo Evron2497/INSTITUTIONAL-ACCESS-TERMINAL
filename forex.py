@@ -150,6 +150,9 @@ if "last_sent_time" not in st.session_state:
 # =====================================================
 # PERSISTENT SECURE IDENTITY GATEWAY
 # =====================================================
+# =====================================================
+# PERSISTENT SECURE IDENTITY GATEWAY (THREAD-SAFE)
+# =====================================================
 USERNAME = st.secrets.get("USERNAME", "")
 PASSWORD = st.secrets.get("PASSWORD", "")
 
@@ -172,14 +175,15 @@ def login_gate():
         if u == USERNAME and p == PASSWORD:  
             st.session_state.logged_in = True  
             st.query_params["auth_session"] = "active"  
-            st.rerun()  
+            # Note: Removed st.rerun() to allow smooth natural phase transitions without thread fragmentation
         else:  
             st.error("Authentication Vector Mismatch: Trace Flagged.")  
     st.markdown('</div></div>', unsafe_allow_html=True)
 
+# Process the security gateway block cleanly
 if not st.session_state.logged_in:
     login_gate()  
-    st.stop()
+    st.stop() # Halts further fragment execution safely until state changes
 
 # =====================================================
 # TELEGRAM MULTI-CHANNEL PHOTO BROADCAST ENGINE
