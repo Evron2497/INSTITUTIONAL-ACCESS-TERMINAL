@@ -146,7 +146,7 @@ if "last_sent_time" not in st.session_state:
     st.session_state.last_sent_time = {}
 
 # =====================================================
-# PERSISTENT SECURE IDENTITY GATEWAY (NO-RERUN SAFE)
+# PERSISTENT SECURE IDENTITY GATEWAY (0% THREAD RERUN)
 # =====================================================
 USERNAME = st.secrets.get("USERNAME", "")
 PASSWORD = st.secrets.get("PASSWORD", "")
@@ -157,26 +157,26 @@ if "logged_in" not in st.session_state:
     else:  
         st.session_state.logged_in = False
 
-def login_gate():
+# Handle auth using form submit flow to avoid calling st.rerun() entirely
+if not st.session_state.logged_in:
     st.markdown('<div class="premium-card" style="max-width: 450px; margin: 100px auto 0px auto;">', unsafe_allow_html=True)  
     st.markdown('<h2 class="terminal-header" style="font-size: 1.8rem; text-align: center; margin-bottom: 8px;">🏦 CORE SECURITY GATE</h2>', unsafe_allow_html=True)  
     st.markdown('<p style="text-align: center; color: #94A3B8; margin-bottom: 24px; font-size: 0.9rem;">Institutional Verification Required</p>', unsafe_allow_html=True)  
-      
-    u = st.text_input("Security ID Token / User Key", key="auth_user_input")  
-    p = st.text_input("Matrix Access Signature", type="password", key="auth_pass_input")  
-      
-    st.markdown('<div style="margin-top: 20px;">', unsafe_allow_html=True)  
-    if st.button("Authenticate Connection Vector"):  
-        if u == USERNAME and p == PASSWORD:  
-            st.session_state.logged_in = True  
-            st.query_params["auth_session"] = "active"  
-            st.rerun()  # Now completely safe because no threads have been generated yet
-        else:  
-            st.error("Authentication Vector Mismatch: Trace Flagged.")  
-    st.markdown('</div></div>', unsafe_allow_html=True)
-
-if not st.session_state.logged_in:
-    login_gate()  
+    
+    with st.form("security_gateway_form"):
+        u = st.text_input("Security ID Token / User Key")  
+        p = st.text_input("Matrix Access Signature", type="password")  
+        submit = st.form_submit_button("Authenticate Connection Vector")
+        
+        if submit:
+            if u == USERNAME and p == PASSWORD:  
+                st.session_state.logged_in = True  
+                st.query_params["auth_session"] = "active"
+                # Natural submission cycle automatically refreshes the layout state cleanly
+            else:  
+                st.error("Authentication Vector Mismatch: Trace Flagged.")  
+                
+    st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 # =====================================================
@@ -437,10 +437,9 @@ def compute_analytics_matrix(pair, df):
     }
 
 # =====================================================
-# LINEAR PIPELINE TRIGGER (NO FRAGMENTS = 100% THREAD SAFE)
+# LINEAR PIPELINE TRIGGER (0% THREAD RUNNER)
 # =====================================================
 def sync_market_telemetry(force=False):
-    # Only fetch if data is totally missing or force synchronization is requested
     first_pair = pairs[0]
     if st.session_state.global_market_registry[first_pair]["df_ltf_slice"].empty or force:
         symbols_to_fetch = list(ticker_mapping.values())  
