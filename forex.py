@@ -8,7 +8,7 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 import plotly.graph_objects as go
-import yfinance as yf  # <-- Replaced MetaTrader5
+import yfinance as yf 
 
 # =====================================================
 # PAGE CONFIG & PREMIUM INSTITUTIONAL VISUAL THEME
@@ -98,12 +98,12 @@ def login():
         else:
             st.error("Invalid credentials")
 
-# Stop rendering main dashboard elements if the session is not validated
+# Stop rendering execution loop if the user isn't authenticated yet
 if not st.session_state.logged_in:
     login()
     st.stop()
 
-# Show active terminal status in sidebar once logged in
+# Persistent state safe banner display
 st.sidebar.success("✅ Institutional Terminal Authorized")
 
 # =====================================================
@@ -127,38 +127,33 @@ def send_telegram(message: str):
     return (len(errors) == 0), "; ".join(errors)
 
 # =====================================================
-# YAHOO FINANCE DATA INGESTION ENGINE
+# YAHOO FINANCE DATA INGESTION ENGINE (STABLE SYNCED)
 # =====================================================
 pairs = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "XAUUSD"]
 selected_pair = st.sidebar.selectbox("Select Active Vector Pair", pairs)
 
 def map_ticker(symbol: str) -> str:
-    """Maps custom forex identifiers to standard Yahoo Finance tickers."""
     sym = symbol.upper()
     if sym == "XAUUSD":
-        return "GC=F"  # Gold Futures
-    if sym.endswith("USD"):
-        return f"{sym}=X"
-    if sym.startswith("USD"):
-        return f"{sym}=X"
+        return "GC=F"  # Gold Continuous Futures
     return f"{sym}=X"
 
-@st.cache_data(ttl=15)  # Cache for 15 seconds to stay dynamic but responsive
+@st.cache_data(ttl=15)
 def get_data(symbol, interval="15m", period="5d"):
     ticker = map_ticker(symbol)
     try:
         ticker_obj = yf.Ticker(ticker)
-        df = ticker_obj.history(period=period, interval=interval)
+        # CRITICAL REFACTOR: threads=False terminates RuntimeError thread exhaustion errors
+        df = ticker_obj.history(period=period, interval=interval, threads=False)
         if df.empty:
             return pd.DataFrame()
+            
         df = df.reset_index()
-        # Handle index differences between regular and intraday strings
         if "Datetime" in df.columns:
             df.rename(columns={"Datetime": "time"}, inplace=True)
         elif "Date" in df.columns:
             df.rename(columns={"Date": "time"}, inplace=True)
         
-        # Strip timezones for data alignment stability
         df["time"] = pd.to_datetime(df["time"]).dt.tz_localize(None)
         df.rename(columns={"Open": "Open", "High": "High", "Low": "Low", "Close": "Close", "Volume": "Volume"}, inplace=True)
         return df
@@ -210,11 +205,6 @@ def calculate_pips(entry, tp, pair):
     elif "XAU" in pair.upper(): pip_value = 0.10  
     else: pip_value = 0.0001
     return round(abs(tp - entry) / pip_value, 1)
-
-def is_trending(df, period=20, threshold=0.3):
-    recent_range = df["High"].iloc[-period:].max() - df["Low"].iloc[-period:].min()
-    atr = calculate_atr(df)
-    return recent_range > (atr * threshold * period)
 
 def detect_fvg(df, lookback=15):
     sub_df = df.iloc[-min(lookback, len(df)):]
@@ -282,7 +272,7 @@ def institutional_engine(df, pair):
     atr_val = calculate_atr(df)
     price = float(df["Close"].iloc[-1])
 
-    # 1. STEP 1: Determine HTF Bias (Using 1 Hour Data fetched dynamically from yfinance)
+    # 1. STEP 1: Higher Timeframe Anchor Context via Hourly Processing
     df_htf = get_data(pair, interval="1h", period="5d")
     htf_bias = "NEUTRAL"
     if not df_htf.empty and len(df_htf) >= 20:
@@ -293,34 +283,32 @@ def institutional_engine(df, pair):
         elif htf_highs.iloc[-1] < htf_highs.mean() and htf_lows.iloc[-1] < htf_lows.mean():
             htf_bias = "BEARISH"
 
-    # Find local structure liquidity levels
+    # Map structural boundaries
     df = calculate_swing_pivots(df, left_bars=5, right_bars=5)
     valid_highs = df["Swing_High"].dropna()
     valid_lows  = df["Swing_Low"].dropna()
     recent_high = float(valid_highs.iloc[-1]) if not valid_highs.empty else float(df["High"].max())
     recent_low  = float(valid_lows.iloc[-1])  if not valid_lows.empty  else float(df["Low"].min())
 
-    # 2. STEP 2 & 3: Premium / Discount & Liquidity Hunt Models
+    # 2. STEP 2 & 3: Multi-Matrix Ranges (Premium / Discount)
     current_range = recent_high - recent_low if (recent_high - recent_low) > 0 else 0.001
     midpoint = recent_low + (current_range * 0.50)
     
     is_in_discount = price < midpoint
     is_in_premium = price > midpoint
 
-    # Liquidity sweeps variations adjusted by pair specifics
     sweep_buy = (df["Low"].iloc[-8:] < recent_low * pair_props["sweep_mult"]).any() and (price > recent_low)
     sweep_sell = (df["High"].iloc[-8:] > recent_high * (2.0 - pair_props["sweep_mult"])).any() and (price < recent_high)
 
-    # 4. STEP 4: Confirmation Models (LTF structural shift)
+    # 4. STEP 4: Break of Micro-Structure Triggers
     choch_bull, choch_bear = detect_choch(df, recent_high, recent_low)
     fvg_buy_present, fvg_sell_present = detect_fvg(df)
     ob_bullish, ob_bearish = detect_order_block(df)
 
-    # 5. STEP 5 & 6: Strict Confluence Execution Filters
+    # 5. STEP 5 & 6: Engine Scoring Systems
     signal = "NO TRADE"
     buy_score = sell_score = 0
     
-    # Calculate analytical clarity scores for matrix layout
     if htf_bias == "BULLISH": buy_score += 25
     if sweep_buy: buy_score += 25
     if choch_bull: buy_score += 25
@@ -331,7 +319,7 @@ def institutional_engine(df, pair):
     if choch_bear: sell_score += 25
     if (ob_bearish or fvg_sell_present) and is_in_premium: sell_score += 25
 
-    # Absolute Rule Matching Implementation
+    # Confluence Alignment Verification
     if htf_bias == "BULLISH" and sweep_buy and choch_bull and is_in_discount:
         if ob_bullish or fvg_buy_present:
             signal = "STRONG BUY (ICT Matrix Alignment)"
@@ -340,12 +328,11 @@ def institutional_engine(df, pair):
         if ob_bearish or fvg_sell_present:
             signal = "STRONG SELL (ICT Matrix Alignment)"
             
-    # Fallback to secondary structures if execution guidelines hold partial configurations
     if signal == "NO TRADE":
         if buy_score >= 50 and is_in_discount: signal = "BUY SCALPMATRIX"
         elif sell_score >= 50 and is_in_premium: signal = "SELL SCALPMATRIX"
 
-    # Targets & Parameters Setup
+    # Safe Yield Projections
     entry = price
     if "BUY" in signal:
         sl  = entry - (atr_val * 1.5)
@@ -361,7 +348,6 @@ def institutional_engine(df, pair):
     pips = calculate_pips(entry, tp, pair) if "NO TRADE" not in signal else 0
     rsi_val = rsi(df)
 
-    # Architectural diagnostics output string
     status_str = f"HTF: {htf_bias} | SWEEP: {'YES' if (sweep_buy or sweep_sell) else 'NO'} | " \
                  f"ZONE: {'DISCOUNT' if is_in_discount else 'PREMIUM'}"
 
@@ -460,7 +446,7 @@ def render_live_dashboard(pair):
 
     if "STRONG" in result["signal"]:
         components.html('<audio autoplay><source src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" type="audio/ogg"></audio>', height=0)
-        st.toast(f"🚨 STRICT ICT CONFIRMED CONFLUULATION SETUP MATCH FOR {pair}!", icon="💰")
+        st.toast(f"🚨 STRICT ICT CONFIRMED CONFLUENCE MATCH FOR {pair}!", icon="💰")
 
 # =====================================================
 # SYSTEM GRID SCANNER ENGINE BLOCK
