@@ -119,12 +119,10 @@ ticker_mapping = {
     "USDJPY": "JPY=X", "AUDUSD": "AUDUSD=X", "XAUUSD": "GC=F"
 }
 
-# Configure Gemini AI SDK using Streamlit Secrets Key
 gemini_key = st.secrets.get("GEMINI_API_KEY", "")
 if gemini_key:
     genai.configure(api_key=gemini_key)
 
-# Global State Management Fixes
 if "global_market_registry" not in st.session_state:
     st.session_state.global_market_registry = {  
         p: {  
@@ -148,10 +146,7 @@ if "last_sent_time" not in st.session_state:
     st.session_state.last_sent_time = {}
 
 # =====================================================
-# PERSISTENT SECURE IDENTITY GATEWAY
-# =====================================================
-# =====================================================
-# PERSISTENT SECURE IDENTITY GATEWAY (THREAD-SAFE)
+# PERSISTENT SECURE IDENTITY GATEWAY (NO-RERUN SAFE)
 # =====================================================
 USERNAME = st.secrets.get("USERNAME", "")
 PASSWORD = st.secrets.get("PASSWORD", "")
@@ -175,15 +170,14 @@ def login_gate():
         if u == USERNAME and p == PASSWORD:  
             st.session_state.logged_in = True  
             st.query_params["auth_session"] = "active"  
-            # Note: Removed st.rerun() to allow smooth natural phase transitions without thread fragmentation
+            st.rerun()  # Now completely safe because no threads have been generated yet
         else:  
             st.error("Authentication Vector Mismatch: Trace Flagged.")  
     st.markdown('</div></div>', unsafe_allow_html=True)
 
-# Process the security gateway block cleanly
 if not st.session_state.logged_in:
     login_gate()  
-    st.stop() # Halts further fragment execution safely until state changes
+    st.stop()
 
 # =====================================================
 # TELEGRAM MULTI-CHANNEL PHOTO BROADCAST ENGINE
@@ -247,7 +241,7 @@ def validate_direction_with_gemini(pair, current_price, current_rsi, smc_structu
     
     prompt = f"""
     You are an institutional FX algorithmic trading assistant checking for high-probability structural setups.
-    We only trade setups that yield > 10 pips and stay in profit for a clear macro duration. We filter out minor 1-minute noise.
+    We only trade setups that yield > 10 pips and stay in profit for a clear macro duration. We filter out minor noise.
 
     Market Data for {pair}:
     - Current Price: {current_price}
@@ -367,7 +361,7 @@ def compute_analytics_matrix(pair, df):
 
     if ote_buy_zone:  
         fib_confluence_buy = True
-        reasons.append(f"Price inside Golden Fibonacci Retrretracement Array: OTE Buy.")  
+        reasons.append(f"Price inside Golden Fibonacci Retracement Array: OTE Buy.")  
     if ote_sell_zone:  
         fib_confluence_sell = True
         reasons.append(f"Price inside Golden Fibonacci Retracement Array: OTE Sell.")  
@@ -401,7 +395,6 @@ def compute_analytics_matrix(pair, df):
     buy_score = int(buy_score * killzone_multiplier)  
     sell_score = int(sell_score * killzone_multiplier)  
 
-    # Fix #3: Gemini Minute-Based Cache Implementation Matrix
     calculated_rsi_metric = int(pct_position * 100) if 0 <= pct_position <= 1 else 50
     cache_key = f"{pair}_{datetime.utcnow().strftime('%Y%m%d%H%M')}"
     
@@ -443,35 +436,41 @@ def compute_analytics_matrix(pair, df):
         "duration": ai_validation["duration"]
     }
 
-# Fix #4 & Fix #6: Throttled data parsing loops + turned off multi-threading leaks 
-@st.fragment(run_every=60)
-def background_telemetry_pipeline():
-    symbols_to_fetch = list(ticker_mapping.values())  
-    try:  
-        raw_data = yf.download(symbols_to_fetch, period="5d", interval="15m", progress=False, group_by="ticker", threads=False)  
-        for pair, ticker in ticker_mapping.items():  
-            if ticker in raw_data.columns.get_level_values(0):  
-                df_symbol = raw_data[ticker].dropna().reset_index()  
-                t_col = "Datetime" if "Datetime" in df_symbol.columns else "Date"  
-                  
-                df_ltf = pd.DataFrame({  
-                    "time": pd.to_datetime(df_symbol[t_col]),  
-                    "Open": df_symbol["Open"].astype(float),  
-                    "High": df_symbol["High"].astype(float),  
-                    "Low": df_symbol["Low"].astype(float),  
-                    "Close": df_symbol["Close"].astype(float),  
-                    "Volume": df_symbol["Volume"].astype(float)  
-                })  
-                  
-                if not df_ltf.empty:  
-                    st.session_state.global_market_registry[pair]["df_ltf_slice"] = df_ltf.tail(45)  
-                    st.session_state.global_market_registry[pair]["metrics"] = compute_analytics_matrix(pair, df_ltf)  
-    except Exception:  
-        pass
+# =====================================================
+# LINEAR PIPELINE TRIGGER (NO FRAGMENTS = 100% THREAD SAFE)
+# =====================================================
+def sync_market_telemetry(force=False):
+    # Only fetch if data is totally missing or force synchronization is requested
+    first_pair = pairs[0]
+    if st.session_state.global_market_registry[first_pair]["df_ltf_slice"].empty or force:
+        symbols_to_fetch = list(ticker_mapping.values())  
+        try:  
+            raw_data = yf.download(symbols_to_fetch, period="5d", interval="15m", progress=False, group_by="ticker", threads=False)  
+            for pair, ticker in ticker_mapping.items():  
+                if ticker in raw_data.columns.get_level_values(0):  
+                    df_symbol = raw_data[ticker].dropna().reset_index()  
+                    t_col = "Datetime" if "Datetime" in df_symbol.columns else "Date"  
+                      
+                    df_ltf = pd.DataFrame({  
+                        "time": pd.to_datetime(df_symbol[t_col]),  
+                        "Open": df_symbol["Open"].astype(float),  
+                        "High": df_symbol["High"].astype(float),  
+                        "Low": df_symbol["Low"].astype(float),  
+                        "Close": df_symbol["Close"].astype(float),  
+                        "Volume": df_symbol["Volume"].astype(float)  
+                    })  
+                      
+                    if not df_ltf.empty:  
+                        st.session_state.global_market_registry[pair]["df_ltf_slice"] = df_ltf.tail(45)  
+                        st.session_state.global_market_registry[pair]["metrics"] = compute_analytics_matrix(pair, df_ltf)  
+        except Exception:  
+            pass
 
-background_telemetry_pipeline()
+sync_market_telemetry(force=False)
 
-# Fix #2: Pure programmatic iframe call structure for stability
+# =====================================================
+# INTERFACE RENDER CORES
+# =====================================================
 def render_tradingview_widget(pair):
     tv_symbol = f"FX:{pair}" if pair != "XAUUSD" else "OANDA:XAUUSD"
     st.iframe(
@@ -479,8 +478,6 @@ def render_tradingview_widget(pair):
         height=450
     )
 
-# Fix #6: Relaxed layout component execution cycle  
-@st.fragment(run_every=30)
 def render_market_scanner():
     st.markdown('<div class="premium-card">', unsafe_allow_html=True)
     st.markdown("<span class='section-title'>🛰️ REAL-TIME SMC / ICT SCANNED MATRIX GRID</span>", unsafe_allow_html=True)
@@ -507,8 +504,13 @@ def render_market_scanner():
     st.markdown('</div>', unsafe_allow_html=True)
 
 # =====================================================
-# SYSTEM CONTROL INTERFACES & RENDERING LAYERS
+# SIDEBAR RE-SYNC MECHANICS
 # =====================================================
+st.sidebar.markdown("<h3 class='terminal-header'>VECTOR MATRIX TERMINAL</h3>", unsafe_allow_html=True)
+if st.sidebar.button("🔄 SYNCHRONIZE CORE TELEMETRY", use_container_width=True):
+    sync_market_telemetry(force=True)
+    st.toast("Telemetry data matrices updated successfully!", icon="🛰️")
+
 st.sidebar.markdown("<div style='margin-top:15px;'></div>", unsafe_allow_html=True)
 selected_pair = st.sidebar.selectbox("Active Stream Target", pairs)
 
@@ -520,10 +522,9 @@ def render_live_dashboard(pair):
     result = cached_node["metrics"]  
 
     if plot_df.empty:  
-        st.info("Synchronizing data arrays with cloud nodes...")  
+        st.info("Synchronizing data arrays with cloud nodes... Please click 'SYNCHRONIZE CORE TELEMETRY' if this persists.")  
         return  
 
-    # Fix #5: 30-Minute Rate-Limit Spam Threshold for Notifications
     if ("BUY" in result["signal"] or "SELL" in result["signal"]) and result["pips"] >= 10.0:  
         now = time.time()
         last_sent = st.session_state.last_sent_time.get(pair, 0)
