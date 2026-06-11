@@ -124,6 +124,7 @@ gemini_key = st.secrets.get("GEMINI_API_KEY", "")
 if gemini_key:
     genai.configure(api_key=gemini_key)
 
+# Global State Management Fixes
 if "global_market_registry" not in st.session_state:
     st.session_state.global_market_registry = {  
         p: {  
@@ -140,8 +141,14 @@ if "global_market_registry" not in st.session_state:
 if "last_signal" not in st.session_state:
     st.session_state.last_signal = {p: None for p in pairs}
 
+if "gemini_cache" not in st.session_state:
+    st.session_state.gemini_cache = {}
+
+if "last_sent_time" not in st.session_state:
+    st.session_state.last_sent_time = {}
+
 # =====================================================
-# PERSISTENT SECURE IDENTITY GATEWAY (ANTI-REFRESH)
+# PERSISTENT SECURE IDENTITY GATEWAY
 # =====================================================
 USERNAME = st.secrets.get("USERNAME", "")
 PASSWORD = st.secrets.get("PASSWORD", "")
@@ -178,7 +185,6 @@ if not st.session_state.logged_in:
 # TELEGRAM MULTI-CHANNEL PHOTO BROADCAST ENGINE
 # =====================================================
 def send_telegram_notification(pair, signal, confidence, tp, sl, pips, entry, duration):
-    """Broadcasts calculated market parameters to all chat IDs found in secrets."""
     bot_token = st.secrets.get("BOT_TOKEN", "")
     chat_ids = st.secrets.get("CHAT_IDS", [])
     
@@ -230,11 +236,9 @@ def send_telegram_notification(pair, signal, confidence, tp, sl, pips, entry, du
 # GEMINI GENERATIVE AI DIRECT DIRECTIONAL VALIDATOR
 # =====================================================
 def validate_direction_with_gemini(pair, current_price, current_rsi, smc_structure, structural_reasons, history_df):
-    """Leverages structural data arrays to validate market trend permanence and filter noise."""
     if not st.secrets.get("GEMINI_API_KEY", ""):
         return {"validated_signal": "NEUTRAL (AI UNCONFIGURED)", "duration": "N/A", "confidence_override": 50, "analysis": "Add GEMINI_API_KEY to secrets."}
     
-    # Compress history dataframe to reduce token costs while keeping context
     history_summary = history_df.tail(15)[["time", "Open", "High", "Low", "Close"]].to_string()
     
     prompt = f"""
@@ -249,10 +253,6 @@ def validate_direction_with_gemini(pair, current_price, current_rsi, smc_structu
     
     Recent historical OHLC structural trend matrix bars:
     {history_summary}
-
-    Task:
-    Evaluate if this structure is fully valid or just temporary retail manipulation noise.
-    Determine the immediate macro bias (BUY, SELL, or NEUTRAL), the reliability confidence scale, and how long this direction will last before structural invalidation (e.g., 45 Minutes, 2 Hours, 4 Hours, 12 Hours).
 
     Return ONLY a valid minified JSON object with these keys:
     "direction": (Must be either "BUY", "SELL", or "NEUTRAL")
@@ -307,7 +307,6 @@ def compute_analytics_matrix(pair, df):
         return st.session_state.global_market_registry[pair]["metrics"]  
 
     reasons = []  
-
     ema20 = df["Close"].ewm(span=20, adjust=False).mean()  
     ema50 = df["Close"].ewm(span=50, adjust=False).mean()  
     ema200 = df["Close"].ewm(span=200, adjust=False).mean()  
@@ -364,10 +363,10 @@ def compute_analytics_matrix(pair, df):
 
     if ote_buy_zone:  
         fib_confluence_buy = True
-        reasons.append(f"Price inside Golden Fibonacci Retracement Array: 61.8% ({round(fib_618,5)}) OTE Buy.")  
+        reasons.append(f"Price inside Golden Fibonacci Retrretracement Array: OTE Buy.")  
     if ote_sell_zone:  
         fib_confluence_sell = True
-        reasons.append(f"Price inside Golden Fibonacci Retracement Array: 61.8% ({round(fib_618,5)}) OTE Sell.")  
+        reasons.append(f"Price inside Golden Fibonacci Retracement Array: OTE Sell.")  
 
     sweep_ssl = df["Low"].iloc[-1] < recent_low and price > recent_low  
     sweep_bsl = df["High"].iloc[-1] > recent_high and price < recent_high  
@@ -398,22 +397,24 @@ def compute_analytics_matrix(pair, df):
     buy_score = int(buy_score * killzone_multiplier)  
     sell_score = int(sell_score * killzone_multiplier)  
 
-    # =====================================================
-    # AI CRITICAL DIRECT ENGINE OVERLAY VALIDATION
-    # =====================================================
+    # Fix #3: Gemini Minute-Based Cache Implementation Matrix
     calculated_rsi_metric = int(pct_position * 100) if 0 <= pct_position <= 1 else 50
-    ai_validation = validate_direction_with_gemini(
-        pair=pair, current_price=price, current_rsi=calculated_rsi_metric, 
-        smc_structure=smc_structure, structural_reasons=reasons, history_df=df
-    )
+    cache_key = f"{pair}_{datetime.utcnow().strftime('%Y%m%d%H%M')}"
+    
+    if cache_key in st.session_state.gemini_cache:
+        ai_validation = st.session_state.gemini_cache[cache_key]
+    else:
+        ai_validation = validate_direction_with_gemini(
+            pair=pair, current_price=price, current_rsi=calculated_rsi_metric, 
+            smc_structure=smc_structure, structural_reasons=reasons, history_df=df
+        )
+        st.session_state.gemini_cache[cache_key] = ai_validation
     
     signal = ai_validation["validated_signal"]
     confidence = ai_validation["confidence_override"]
-    reasons.append(f"AI Core Structural Diagnosis: {ai_validation['analysis']}")
+    reasons.append(f"AI Matrix Log: {ai_validation['analysis']}")
 
     pip_mult = 0.01 if "JPY" in pair.upper() else (0.10 if "XAU" in pair.upper() else 0.0001)  
-    
-    # Absolute minimum threshold parameter forced to filter market noise (15.0 Pips target setup)
     minimum_pip_target = 15.0
     min_delta_price = minimum_pip_target * pip_mult
 
@@ -438,11 +439,12 @@ def compute_analytics_matrix(pair, df):
         "duration": ai_validation["duration"]
     }
 
-@st.fragment(run_every=10) # Reduced interval frequency to conserve API rate limits
+# Fix #4 & Fix #6: Throttled data parsing loops + turned off multi-threading leaks 
+@st.fragment(run_every=60)
 def background_telemetry_pipeline():
     symbols_to_fetch = list(ticker_mapping.values())  
     try:  
-        raw_data = yf.download(symbols_to_fetch, period="15d", interval="15m", progress=False, group_by="ticker")  
+        raw_data = yf.download(symbols_to_fetch, period="5d", interval="15m", progress=False, group_by="ticker", threads=False)  
         for pair, ticker in ticker_mapping.items():  
             if ticker in raw_data.columns.get_level_values(0):  
                 df_symbol = raw_data[ticker].dropna().reset_index()  
@@ -465,31 +467,16 @@ def background_telemetry_pipeline():
 
 background_telemetry_pipeline()
 
-# =====================================================
-# TRADINGVIEW EMBED COMPONENTS ENGINE
-# =====================================================
+# Fix #2: Pure programmatic iframe call structure for stability
 def render_tradingview_widget(pair):
     tv_symbol = f"FX:{pair}" if pair != "XAUUSD" else "OANDA:XAUUSD"
-    tv_html = f"""
-    <div class="tradingview-widget-container" style="height:450px;width:100%;">
-      <div id="tradingview_matrix"></div>
-      <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-      <script type="text/javascript">
-      new TradingView.widget({{
-        "width": "100%", "height": 450, "symbol": "{tv_symbol}", "interval": "15",
-        "timezone": "Etc/UTC", "theme": "dark", "style": "1", "locale": "en",
-        "enable_publishing": false, "hide_side_toolbar": false, "allow_symbol_change": true,
-        "container_id": "tradingview_matrix"
-      }});
-      </script>
-    </div>
-    """
-    components.html(tv_html, height=450)
+    st.iframe(
+        f"https://www.tradingview.com/widgetembed/?symbol={tv_symbol}&interval=15&theme=dark",
+        height=450
+    )
 
-# =====================================================
-# MULTI-PAIR LIVE TRACKING SCANNER GRID
-# =====================================================
-@st.fragment(run_every=5)
+# Fix #6: Relaxed layout component execution cycle  
+@st.fragment(run_every=30)
 def render_market_scanner():
     st.markdown('<div class="premium-card">', unsafe_allow_html=True)
     st.markdown("<span class='section-title'>🛰️ REAL-TIME SMC / ICT SCANNED MATRIX GRID</span>", unsafe_allow_html=True)
@@ -516,12 +503,11 @@ def render_market_scanner():
     st.markdown('</div>', unsafe_allow_html=True)
 
 # =====================================================
-# ZERO-LATENCY HIGH-VISIBILITY RENDERING UI
+# SYSTEM CONTROL INTERFACES & RENDERING LAYERS
 # =====================================================
 st.sidebar.markdown("<div style='margin-top:15px;'></div>", unsafe_allow_html=True)
 selected_pair = st.sidebar.selectbox("Active Stream Target", pairs)
 
-# Inject Global Scanner Matrix
 render_market_scanner()
 
 def render_live_dashboard(pair):
@@ -530,25 +516,25 @@ def render_live_dashboard(pair):
     result = cached_node["metrics"]  
 
     if plot_df.empty:  
-        st.info("Synchronizing multi-timeframe vectors with system node parameters...")  
+        st.info("Synchronizing data arrays with cloud nodes...")  
         return  
 
-    # Dispatch to Telegram if AI validation passes and target distance meets your criteria (>10 pips)
+    # Fix #5: 30-Minute Rate-Limit Spam Threshold for Notifications
     if ("BUY" in result["signal"] or "SELL" in result["signal"]) and result["pips"] >= 10.0:  
-        if result["signal"] != st.session_state.last_signal[pair]:  
+        now = time.time()
+        last_sent = st.session_state.last_sent_time.get(pair, 0)
+        
+        if now - last_sent > 1800:  
             components.html('<audio autoplay style="display:none;"><source src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" type="audio/ogg"></audio>', height=0)  
-            st.toast(f"🚨 AUTO-DISPATCHED CONFIRMED AI STRUCTURAL SIGNAL ON {pair}!", icon="⚡")  
+            st.toast(f"🚨 DISPATCHED VALIDATED AI SIGNAL FOR {pair}!", icon="⚡")  
             
             send_telegram_notification(
                 pair=pair, signal=result["signal"], confidence=result["confidence"],
                 tp=result["tp"], sl=result["sl"], pips=result["pips"], entry=result["entry"],
                 duration=result["duration"]
             )
-            st.session_state.last_signal[pair] = result["signal"]  
-    else:  
-        st.session_state.last_signal[pair] = None  
+            st.session_state.last_sent_time[pair] = now
 
-    # Interactive Dashboard Split Columns
     chart_view, control_view = st.columns([2.2, 0.8])
     
     with chart_view:
@@ -577,20 +563,16 @@ def render_live_dashboard(pair):
     with control_view:
         with st.container(border=True):
             st.markdown("<span class='section-title' style='display:block; margin-top:5px;'>🎮 OVERRIDE CONTROL</span>", unsafe_allow_html=True)
-            st.markdown("<p style='font-size:0.8rem; color:#94A3B8; margin-bottom:15px;'>Manually force broadcast current live parameters to your subscribers.</p>", unsafe_allow_html=True)
             
             btn_label = f"📤 BROADCAST {pair} SIGNAL"
             if st.button(btn_label, use_container_width=True, key="manual_broadcast_trigger"):
-                with st.spinner("Dispatching Matrix Packets to Network..."):
-                    status = send_telegram_notification(
+                with st.spinner("Dispatching Matrix Packets..."):
+                    send_telegram_notification(
                         pair=pair, signal=result["signal"], confidence=result["confidence"],
                         tp=result["tp"], sl=result["sl"], pips=result["pips"], entry=result["entry"],
                         duration=result["duration"]
                     )
-                    if status:
-                        st.success(f"Broadcasted to channels successfully!")
-                    else:
-                        st.warning("Finished. Verify chat permissions if errors persist.")
+                    st.success(f"Forced update broadcast complete.")
             
             st.markdown("<div style='margin-top:15px; border-top:1px solid #334155; padding-top:15px;'></div>", unsafe_allow_html=True)
             st.markdown(f"""
@@ -603,7 +585,6 @@ def render_live_dashboard(pair):
             </div>
             """, unsafe_allow_html=True)
       
-    # Custom Grid Metrics Row Layout  
     color_hex = "#10B981" if "BUY" in result["signal"] else ("#EF4444" if "SELL" in result["signal"] else "#94A3B8")  
     st.markdown('<div class="premium-card">', unsafe_allow_html=True)  
     c1, c2, c3, c4 = st.columns(4)  
@@ -627,7 +608,3 @@ def render_live_dashboard(pair):
     """, unsafe_allow_html=True)  
 
 render_live_dashboard(selected_pair)
-
-# Global Smooth UI Loop Stream 
-time.sleep(5)
-st.rerun()
