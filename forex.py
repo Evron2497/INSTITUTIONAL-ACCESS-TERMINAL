@@ -157,7 +157,6 @@ if "logged_in" not in st.session_state:
     else:  
         st.session_state.logged_in = False
 
-# Handle auth using form submit flow to avoid calling st.rerun() entirely
 if not st.session_state.logged_in:
     st.markdown('<div class="premium-card" style="max-width: 450px; margin: 100px auto 0px auto;">', unsafe_allow_html=True)  
     st.markdown('<h2 class="terminal-header" style="font-size: 1.8rem; text-align: center; margin-bottom: 8px;">🏦 CORE SECURITY GATE</h2>', unsafe_allow_html=True)  
@@ -172,7 +171,7 @@ if not st.session_state.logged_in:
             if u == USERNAME and p == PASSWORD:  
                 st.session_state.logged_in = True  
                 st.query_params["auth_session"] = "active"
-                # Natural submission cycle automatically refreshes the layout state cleanly
+                st.rerun()
             else:  
                 st.error("Authentication Vector Mismatch: Trace Flagged.")  
                 
@@ -208,7 +207,7 @@ def send_telegram_notification(pair, signal, confidence, tp, sl, pips, entry, du
         f"🟢 *Take Profit:* {tp}\n"
         f"🔴 *Stop Loss:* {sl}\n\n"
         f"ℹ️ _Reference attached layout chart deployment tool._\n"
-        f"🕒 _Timestamp (UTC):_ {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}"
+        f"🕒 _Timestamp (UTC):_ {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}"
     )
     
     url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
@@ -261,10 +260,9 @@ def validate_direction_with_gemini(pair, current_price, current_rsi, smc_structu
     """
     
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-1.5-flash", generation_config={"response_mime_type": "application/json"})
         response = model.generate_content(prompt)
-        cleaned_text = response.text.replace("```json", "").replace("```", "").strip()
-        data = json.loads(cleaned_text)
+        data = json.loads(response.text.strip())
         
         direction_label = "NEUTRAL"
         if data.get("is_valid") and data.get("direction") in ["BUY", "SELL"]:
@@ -396,7 +394,7 @@ def compute_analytics_matrix(pair, df):
     sell_score = int(sell_score * killzone_multiplier)  
 
     calculated_rsi_metric = int(pct_position * 100) if 0 <= pct_position <= 1 else 50
-    cache_key = f"{pair}_{datetime.utcnow().strftime('%Y%m%d%H%M')}"
+    cache_key = f"{pair}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M')}"
     
     if cache_key in st.session_state.gemini_cache:
         ai_validation = st.session_state.gemini_cache[cache_key]
