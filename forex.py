@@ -260,7 +260,7 @@ def validate_direction_with_gemini(pair, current_price, current_rsi, smc_structu
     """
     
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash", generation_config={"response_mime_type": "application/json"})
+        model = genai.GenerativeModel("models/gemini-1.5-flash", generation_config={"response_mime_type": "application/json"})
         response = model.generate_content(prompt)
         data = json.loads(response.text.strip())
         
