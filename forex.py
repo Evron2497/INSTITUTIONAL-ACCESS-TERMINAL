@@ -171,8 +171,14 @@ def run_cached_ai_analysis(res, pair):
             model=target_model,
             contents=prompt,
         )
-        clean_text = response.text.strip().replace("
-```json", "").replace("```", "")
+        # Safely clean markdown code block wraps without generating multiline literal errors
+        clean_text = response.text.strip()
+        if clean_text.startswith("```"):
+            clean_text = clean_text.split("```")[1]
+            if clean_text.startswith("json"):
+                clean_text = clean_text[4:]
+        clean_text = clean_text.strip()
+        
         return json.loads(clean_text)
     except Exception as e:
         return {
@@ -186,7 +192,6 @@ def run_cached_ai_analysis(res, pair):
 USERNAME = st.secrets.get("USERNAME", "")
 PASSWORD = st.secrets.get("PASSWORD", "")
 
-# We track login state with custom tracking parameters that drop whenever the app refreshes
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
@@ -199,8 +204,6 @@ if "shared_prediction" not in st.session_state:
         "execution_timing": "AWAITING ENGINE SEED"
     }
 
-# --- CRITICAL REFRESH CONTROL FIX ---
-# Instead of holding a permanent True status, we process submission inside an isolated structural guard.
 def render_login_form():
     st.markdown('<h2 class="terminal-header">🏦 Institutional Access Terminal</h2>', unsafe_allow_html=True)
     with st.form("auth_form", clear_on_submit=True):
@@ -218,7 +221,6 @@ if not st.session_state.logged_in:
     render_login_form()
     st.stop()
 
-# Add a manual verification logout handle inside sidebar menu
 if st.sidebar.button("🔒 Structural Session Disconnect"):
     st.session_state.logged_in = False
     st.rerun()
