@@ -14,58 +14,110 @@ import yfinance as yf
 # =====================================================
 st.set_page_config(page_title="CORE VECTOR MATRIX", page_icon="🏦", layout="wide")
 
+# High-end Custom CSS injection for dark glassmorphism aesthetic
 st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght=300;400;600&family=Space+Grotesk:wght=400;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
         
+        /* Global Reset and Cyber Dark Background */
         html, body, [data-testid="stAppViewContainer"] {
-            background-color: #0A0E17 !important;
+            background-color: #060913 !important;
             font-family: 'Space Grotesk', sans-serif !important;
             color: #E2E8F0 !important;
         }
         
+        /* Header styling */
+        .main-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            font-size: 2.2rem;
+            background: linear-gradient(135deg, #00F0FF 0%, #7000FF 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.03em;
+            margin-bottom: 5px;
+        }
+        
+        .sub-title-bar {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: #64748B;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 25px;
+        }
+
+        /* Sidebar Styling */
         [data-testid="stSidebar"] {
-            background-color: #0F1626 !important;
+            background-color: #090D1A !important;
             border-right: 1px solid #1E293B !important;
         }
         
-        div[data-testid="stMetricSimpleNormal"] {
-            background: linear-gradient(135deg, #111827 0%, #1F2937 100%) !important;
-            border: 1px solid #2D3748 !important;
+        /* Glassmorphic Panel Wrapper */
+        .matrix-card {
+            background: rgba(15, 23, 42, 0.65) !important;
+            border: 1px solid rgba(255, 255, 255, 0.05) !important;
+            border-left: 4px solid #00F0FF !important;
             border-radius: 12px !important;
-            padding: 15px 20px !important;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3) !important;
+            padding: 20px !important;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37) !important;
+            backdrop-filter: blur(8px) !important;
+            margin-bottom: 15px;
         }
         
-        div[data-testid="stMetricLabel"] {
-            font-size: 0.85rem !important;
-            text-transform: uppercase !important;
-            letter-spacing: 0.05em !important;
-            color: #94A3B8 !important;
+        .matrix-card.sell {
+            border-left: 4px solid #FF4B4B !important;
         }
-        
-        .terminal-header {
-            font-family: 'Space Grotesk', sans-serif;
+        .matrix-card.neutral {
+            border-left: 4px solid #64748B !important;
+        }
+
+        /* Metric Grid Blocks */
+        .metric-glow-box {
+            background: rgba(30, 41, 59, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+            box-shadow: inset 0 1px 1px rgba(255,255,255,0.05);
+        }
+        .metric-glow-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: #94A3B8;
+            letter-spacing: 0.07em;
+            margin-bottom: 5px;
+        }
+        .metric-glow-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.4rem;
             font-weight: 600;
-            background: linear-gradient(90deg, #00F0FF, #7000FF);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            letter-spacing: -0.02em;
+            color: #FFFFFF;
         }
-        
+
+        /* Custom Buttons */
         .stButton>button {
-            background: linear-gradient(90deg, #1E1B4B 0%, #311042 100%) !important;
+            background: linear-gradient(135deg, #0F172A 0%, #1E1B4B 100%) !important;
             color: #00F0FF !important;
-            border: 1px solid #4338CA !important;
+            border: 1px solid rgba(0, 240, 255, 0.3) !important;
             border-radius: 8px !important;
+            padding: 10px 24px !important;
+            font-family: 'Space Grotesk', sans-serif !important;
             font-weight: 600 !important;
+            letter-spacing: 0.02em !important;
             transition: all 0.3s ease !important;
             width: 100% !important;
         }
         .stButton>button:hover {
             border-color: #00F0FF !important;
-            box-shadow: 0px 0px 15px rgba(0, 240, 255, 0.4) !important;
+            box-shadow: 0px 0px 20px rgba(0, 240, 255, 0.35) !important;
             color: #FFFFFF !important;
+            transform: translateY(-1px);
+        }
+        
+        /* Hide default Streamlit block elements decorations */
+        div[data-testid="stDecoration"] {
+            background-image: linear-gradient(90deg, #00F0FF, #7000FF) !important;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -89,27 +141,31 @@ if "shared_prediction" not in st.session_state:
     }
 
 def render_login_form():
-    st.markdown('<h2 class="terminal-header">🏦 Institutional Access Terminal</h2>', unsafe_allow_html=True)
+    st.markdown('<div style="max-width:450px; margin: 80px auto 0 auto;">', unsafe_allow_html=True)
+    st.markdown('<h2 class="main-title" style="text-align:center;">CORE MATRIX LOGIN</h2>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title-bar" style="text-align:center; margin-bottom:30px;">Institutional Authentication Required</p>', unsafe_allow_html=True)
     with st.form("auth_form", clear_on_submit=True):
-        u = st.text_input("Username")
-        p = st.text_input("Password", type="password")
-        submit_btn = st.form_submit_button("Secure Login")
+        u = st.text_input("Access Identifier Username")
+        p = st.text_input("Secure Passkey Crypt", type="password")
+        submit_btn = st.form_submit_button("Initialize Security Session")
         if submit_btn:
             if u == USERNAME and p == PASSWORD:
                 st.session_state.logged_in = True
                 st.rerun()
             else:
-                st.error("Invalid credentials configuration profile.")
+                st.error("Invalid node validation configuration profile.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 if not st.session_state.logged_in:
     render_login_form()
     st.stop()
 
-if st.sidebar.button("🔒 Structural Session Disconnect"):
+if st.sidebar.button("🔒 Terminal Session Disconnect"):
     st.session_state.logged_in = False
     st.rerun()
 
-st.sidebar.success("✅ Session Volatile Active")
+st.sidebar.markdown('<div style="padding: 2px 10px; background: rgba(16,185,129,0.1); border: 1px solid #10B981; border-radius:6px; color:#10B981; font-size:0.8rem; font-family:\'JetBrains Mono\'; text-align:center;">● SESSION SECURELY LINKED</div>', unsafe_allow_html=True)
+st.sidebar.markdown("---")
 
 # =====================================================
 # TELEGRAM DISPATCH PIPELINE
@@ -143,7 +199,8 @@ pair_mapping = {
 }
 
 pairs = list(pair_mapping.keys())
-selected_pair = st.sidebar.selectbox("Select Active Vector Pair", pairs)
+st.sidebar.subheader("🎛️ Terminal Controls")
+selected_pair = st.sidebar.selectbox("Active Liquidity Node Vector", pairs)
 
 @st.cache_data(ttl=5)
 def get_data_yf(display_symbol, interval="15m", period="5d"):
@@ -459,6 +516,31 @@ def render_live_dashboard(pair):
     result = institutional_engine(market_data, pair)
     st.session_state.shared_prediction = result
 
+    # Display Dynamic Header Panel based on Signal
+    card_type = "neutral"
+    if "BUY" in result["signal"]: card_type = "buy"
+    elif "SELL" in result["signal"]: card_type = "sell"
+    
+    st.markdown(f"""
+    <div class="matrix-card {card_type}">
+        <span style="font-family:'JetBrains Mono'; font-size:0.8rem; color:#64748B;">[CURRENT NODE VECTOR TARGET]</span>
+        <h2 style="margin:5px 0 0 0; font-weight:600; color:#FFFFFF;">{pair} — <span style="color:{'#00F0FF' if card_type=='buy' else ('#FF4B4B' if card_type=='sell' else '#94A3B8')};">{result['signal']}</span></h2>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 4-Column Glossy Metric Bar
+    m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+    with m_col1:
+        st.markdown(f'<div class="metric-glow-box"><div class="metric-glow-label">Matrix Certainty</div><div class="metric-glow-val" style="color:#00F0FF;">{result["confidence"]}%</div></div>', unsafe_allow_html=True)
+    with m_col2:
+        st.markdown(f'<div class="metric-glow-box"><div class="metric-glow-label">Target Projection</div><div class="metric-glow-val">{result["pips"]} Pips</div></div>', unsafe_allow_html=True)
+    with m_col3:
+        st.markdown(f'<div class="metric-glow-box"><div class="metric-glow-label">Momentum Scalar</div><div class="metric-glow-val">{result["rsi"]} RSI</div></div>', unsafe_allow_html=True)
+    with m_col4:
+        st.markdown(f'<div class="metric-glow-box"><div class="metric-glow-label">Active Session</div><div class="metric-glow-val" style="font-size:0.95rem; line-height:2.2rem; color:#A855F7;">{result["session"].split(" ")[0]}</div></div>', unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
     plot_df = calculate_swing_pivots(market_data, left_bars=5, right_bars=5)
     fig = go.Figure()
 
@@ -467,67 +549,73 @@ def render_live_dashboard(pair):
     fig.add_trace(go.Scatter(x=plot_df["time"], y=plot_df["Swing_Low"], mode="markers", name="Sell-Side Liquidity (SSL)", marker=dict(color="#00F0FF", size=7, symbol="triangle-up")))
 
     if result["recent_high"] > 0:
-        fig.add_hline(y=result["recent_high"], line_dash="dash", line_color="rgba(255,75,75,0.5)", annotation_text="BSL Pool")
-        fig.add_hline(y=result["recent_low"],  line_dash="dash", line_color="rgba(0,240,255,0.5)", annotation_text="SSL Pool")
-        eq = result["recent_low"] + ((result["recent_high"] - result["recent_low"]) * 0.5)
-        fig.add_hline(y=eq, line_dash="dot", line_color="#FFFF00", annotation_text="Equilibrium (50%)")
+        fig.add_hline(y=result["recent_high"], line_dash="dash", line_color="rgba(255,75,75,0.4)", annotation_text="BSL Pool")
+        fig.add_hline(y=result["recent_low"],  line_dash="dash", line_color="rgba(0,240,255,0.4)", annotation_text="SSL Pool")
+        eq = result["recent_low"] + ((result["recent_high"] - result["recent_low"]) * 0.50)
+        fig.add_hline(y=eq, line_dash="dot", line_color="rgba(255,255,0,0.4)", annotation_text="Equilibrium (50%)")
 
-    fig.update_layout(title=f"🔥 LIVE {pair} (yFinance 15M Execution Matrix Map)", template="plotly_dark", height=420, xaxis_rangeslider_visible=False, uirevision="keep", margin=dict(l=10, r=10, t=40, b=10))
+    fig.update_layout(
+        template="plotly_dark", 
+        height=400, 
+        xaxis_rangeslider_visible=False, 
+        uirevision="keep", 
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=10, r=10, t=10, b=10)
+    )
     st.plotly_chart(fig, use_container_width=True)
 
     if "STRONG" in result["signal"] or "BUY" in result["signal"] or "SELL" in result["signal"]:
         st.info(f"🚨 **TACTICAL TIMING GUIDELINE:** {result['execution_timing']}")
 
-    st.markdown("### 🔍 Alpha Convergence Matrix Analysis")
+    # Quantitative score distribution slider mapping
+    st.markdown("#### 🔍 Structural Orderflow Distribution Index")
     max_score = min(int(max(result["buy_score"], result["sell_score"])), 100)
     st.progress(max_score / 100)
 
     sc1, sc2 = st.columns(2)
-    sc1.write(f"🟢 **Institutional Accumulation Load:** `{result['buy_score']}/100`")
-    sc2.write(f"🔴 **Institutional Distribution Load:** `{result['sell_score']}/100`")
+    sc1.markdown(f"🟢 Institutional Accumulation Load: <b style='font-family:monospace; color:#10B981;'>{result['buy_score']}/100</b>", unsafe_allow_html=True)
+    sc2.markdown(f"🔴 Institutional Distribution Load: <b style='font-family:monospace; color:#EF4444;'>{result['sell_score']}/100</b>", unsafe_allow_html=True)
     
-    st.markdown("---")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Structural Vector", result["signal"])
-    c2.metric("Matrix Certainty Factor", f"{result['confidence']}%")
-    c3.metric("Calculated Vector Range", f"{result['pips']} Pips")
-    c4.metric("Active Session Window", result["session"])
-
-    with st.expander("Engine Log Buffer (JSON)"):
+    with st.expander("Engine Log Buffer Frame (JSON Data Validation)"):
         st.json(result)
 
     if "STRONG" in result["signal"] and result["pips"] >= 5.0:
         audio_url = "https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg"
         components.html(f'<audio autoplay><source src="{audio_url}" type="audio/ogg"></audio>', height=0)
-        st.toast(f"🚨 STRATEGIC ALGO DETECTED SETUP ON {pair}!", icon="💰")
+        st.toast(f"🚨 SETUP SIGNAL CONFIRMED FOR {pair}!", icon="💰")
 
 # =====================================================
 # HIGH REFLECTION GRID SCANNER FRAGMENT
 # =====================================================
 @st.fragment(run_every=20)
 def render_scanner_block():
-    st.subheader("📡 Cross-Asset Matrix Scanner Grid")
+    st.markdown("""
+    <div style="background: rgba(15, 23, 42, 0.4); padding: 12px 15px; border-radius: 8px 8px 0 0; border: 1px solid rgba(255,255,255,0.05); border-bottom: none;">
+        <span style="font-family:'JetBrains Mono'; font-size:0.8rem; color:#00F0FF; font-weight:600;">📡 ASSET NETWORK TELEMETRY MATRIX SCANNER</span>
+    </div>
+    """, unsafe_allow_html=True)
     scan_data = run_scanner_yf(tuple(pairs))
-    scanner_df = pd.DataFrame(scan_data, columns=["Pair", "Signal Bias", "Confidence Factor", "SMC Architecture Status", "Range Projection", "Current Session Flow"])
+    scanner_df = pd.DataFrame(scan_data, columns=["Asset Pair", "Signal Bias State", "Certainty", "SMC Architecture Flow", "Projection Yield", "Session Flow"])
     st.dataframe(scanner_df, use_container_width=True, hide_index=True)
 
 # =====================================================
 # MAIN ENGINE LAYOUT ASSEMBLY
 # =====================================================
-st.title("🏦 TECH-STAR INSTITUTIONAL QUANT MATRIX TERMINAL 🚀")
-st.markdown("---")
+st.markdown('<h1 class="main-title">CORE MATRIX</h1>', unsafe_allow_html=True)
+st.markdown('<p class="sub-title-bar">INSTITUTIONAL QUANTITATIVE FOREX TERMINAL // VERSION 4.2.0</p>', unsafe_allow_html=True)
 
 col_layout_left, col_layout_right = st.columns([1.8, 1.2])
 
 with col_layout_left:
     render_live_dashboard(selected_pair)
     
-    # TRADINGVIEW REAL-TIME INTEL INTEGRATION ATTACHMENT
+    # Premium styled TradingView Analytical frame
     st.markdown("---")
-    st.subheader("📊 Live TradingView Stream Platform")
+    st.markdown("### 📊 Live TradingView Stream Platform")
     symbol_tv = f"OANDA:{selected_pair}"
     html_widget = f"""
-    <div id="tv_chart_container"></div>
+    <div id="tv_chart_container" style="border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; overflow: hidden;"></div>
     <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
     <script type="text/javascript">
     new TradingView.widget({{
@@ -539,7 +627,7 @@ with col_layout_left:
        "theme": "dark",
        "style": "1",
        "locale": "en",
-       "toolbar_bg": "#f1f3f6",
+       "toolbar_bg": "#0A0E17",
        "enable_publishing": false,
        "hide_side_toolbar": false,
        "allow_symbol_change": true,
@@ -551,23 +639,26 @@ with col_layout_left:
 
 with col_layout_right:
     render_scanner_block()
-
-st.markdown("---")
-current_result = st.session_state.shared_prediction
-
-# =====================================================
-# SIGNAL DISPATCH INTERFACE
-# =====================================================
-st.subheader("📩 High-Priority Signal Broadcast Hub")
-confirm_send = st.checkbox("Acknowledge strict compliance with algorithmic validation logic rules.")
-
-if st.button("🚀 EXECUTE NETWORK TELEGRAM BROADCAST"):
-    if not confirm_send:
-        st.warning("Execution Rejected: Affirm network confirmation verification protocol.")
-    elif "NEUTRAL" in current_result["signal"]:
-        st.error("Execution Aborted: Algorithmic engine must contain active market matrix parameters to scale broadcast vectors.")
-    else:
-        message = f"""🏦 <b>TECH-STAR QUALIFIED ALGO SIGNAL</b>
+    
+    # Repositioned Signal Deployment Control Box inside right column for a cleaner workspace flow
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("""
+    <div style="background: rgba(15, 23, 42, 0.4); padding: 12px 15px; border-radius: 8px 8px 0 0; border: 1px solid rgba(255,255,255,0.05); border-bottom: none;">
+        <span style="font-family:'JetBrains Mono'; font-size:0.8rem; color:#7000FF; font-weight:600;">📩 HIGH-PRIORITY BROADCAST HUB</span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    with st.container(border=True):
+        current_result = st.session_state.shared_prediction
+        confirm_send = st.checkbox("Confirm network payload verification protocol rules.")
+        
+        if st.button("🚀 EXECUTE PAYLOAD BROADCAST"):
+            if not confirm_send:
+                st.warning("Execution Rejected: Affirm network confirmation verification protocol.")
+            elif "NEUTRAL" in current_result["signal"]:
+                st.error("Execution Aborted: Algorithmic engine contains zero active market tracking variables.")
+            else:
+                message = f"""🏦 <b>TECH-STAR QUALIFIED ALGO SIGNAL</b>
 
 VECTOR PAIR: {selected_pair}
 SIGNAL BIAS: <b>{current_result['signal']}</b>
@@ -587,8 +678,8 @@ RSI SCALAR: {current_result['rsi']}
 TEMPORAL SESSION: {current_result['session']}
 SYSTEM TIME STAMP: {current_result['timestamp']}
 """
-        ok, err = send_telegram(message)
-        if ok:
-            st.success("✅ Broadcast system arrays systematically deployed to Telegram channels.")
-        else:
-            st.error(f"❌ Telegram pipeline distribution exception: {err}")
+                ok, err = send_telegram(message)
+                if ok:
+                    st.success("✅ Broadcast vectors systematically deployed to Telegram channels.")
+                else:
+                    st.error(f"❌ Distribution execution exception: {err}")
