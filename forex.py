@@ -1,7 +1,6 @@
 import os
 from datetime import datetime, timezone
 import time
-import json
 import numpy as np
 import pandas as pd
 import requests
@@ -9,13 +8,6 @@ import streamlit as st
 import streamlit.components.v1 as components
 import plotly.graph_objects as go
 import yfinance as yf
-
-# =====================================================
-# MODERN GOOGLE AI MULTI-AUTH SDK UPGRADE
-# =====================================================
-from google import genai
-from google.oauth2.credentials import Credentials
-from google.genai import types
 
 # =====================================================
 # PAGE CONFIG & PREMIUM INSTITUTIONAL VISUAL THEME
@@ -75,116 +67,8 @@ st.markdown("""
             box-shadow: 0px 0px 15px rgba(0, 240, 255, 0.4) !important;
             color: #FFFFFF !important;
         }
-        .ai-analysis-box {
-            background: linear-gradient(135deg, #0F172A 0%, #1E1B4B 100%);
-            border-left: 4px solid #8B5CF6;
-            padding: 20px;
-            border-radius: 0 12px 12px 0;
-            margin-top: 15px;
-            box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
-        }
-        .prediction-card {
-            background: #111827;
-            border: 1px solid #1E293B;
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 10px;
-        }
     </style>
 """, unsafe_allow_html=True)
-
-# =====================================================
-# AI API INITIALIZATION LAYER (PROJECT RESOLVED)
-# =====================================================
-GEMINI_API_KEY = str(st.secrets.get("GEMINI_API_KEY", "")).strip()
-GCP_PROJECT_ID = str(st.secrets.get("GCP_PROJECT_ID", "")).strip()
-
-if not GEMINI_API_KEY or GEMINI_API_KEY == "None":
-    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-
-if not GCP_PROJECT_ID or GCP_PROJECT_ID == "None":
-    GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "")
-
-ai_client = None
-is_vertex = False
-
-if GEMINI_API_KEY:
-    try:
-        if GEMINI_API_KEY.startswith("AQ."):
-            gcp_credentials = Credentials(token=GEMINI_API_KEY)
-            ai_client = genai.Client(
-                vertexai=True, 
-                project=GCP_PROJECT_ID if GCP_PROJECT_ID else None,
-                credentials=gcp_credentials
-            )
-            is_vertex = True
-            st.sidebar.success("🤖 Vertex AI Engine Authenticated!")
-        else:
-            ai_client = genai.Client(api_key=GEMINI_API_KEY)
-            is_vertex = False
-            st.sidebar.success("🤖 Google AI Studio Authenticated!")
-    except Exception as e:
-        st.sidebar.error(f"AI Init Error: {e}")
-        ai_client = None
-else:
-    st.sidebar.warning("⚠️ Waiting for a valid API Key entry in secrets...")
-
-# =====================================================
-# GOOGLE GEMINI AI CONTEXTUAL ANALYZER (JSON EXPECTED)
-# =====================================================
-@st.cache_data(ttl=60)
-def run_cached_ai_analysis(res, pair):
-    default_offline = {
-        "regime_bias": "OFFLINE", "vol_expansion": "UNKNOWN", "duration_horizon": "UNKNOWN",
-        "narrative": "⚠️ **AI Engine Offline**: Initialize your setup keys by assigning a valid `GEMINI_API_KEY` token string inside environment secrets."
-    }
-    
-    if not ai_client:
-        return default_offline
-
-    prompt = f"""
-    You are an expert institutional risk engineer and quant operator specializing in Inner Circle Trader (ICT) setups and Smart Money Concepts (SMC).
-    Run an advanced executive confluence risk validation sweep and structured data analysis on the market telemetry parameters captured below for {pair}.
-    
-    Matrix Variables:
-    - Current Matrix Signal: {res['signal']}
-    - Engine Confidence Factor: {res['confidence']}%
-    - Multi-Timeframe Structural Bias: {res['structure']}
-    - Momentum RSI Scalar: {res['rsi']}
-    - Fair Value Gap Verification: {res['fvg_status']}
-    - System Order Block Allocation: {res['ob_status']}
-    - Session Pattern Recognition Strategy: {res['pattern']}
-    - Momentum Wick Divergence State: {res['divergence']}
-    - Active Macro Time Window: {res['session']}
-
-    You must output a strictly formatted raw JSON block. Do not include markdown formatting wrappers (like ```json). The structure must exactly match this layout:
-    {{
-        "regime_bias": "BULLISH REVERSAL / BEARISH EXPANSION / CONSOLIDATION CHOP",
-        "vol_expansion": "HIGH EXPECTATION / MODERATE / COMPRESSED",
-        "duration_horizon": "NEXT 2-4 HOURS / INDETERMINATE",
-        "narrative": "Provide exactly 3 punchy bullet points using hardcore professional quantitative forex jargon explaining structural discrepancies, pricing bands (Premium vs Discount conflicts), and invalidation zones."
-    }}
-    """
-    try:
-        target_model = 'gemini-1.5-flash-001' if is_vertex else 'gemini-1.5-flash'
-        response = ai_client.models.generate_content(
-            model=target_model,
-            contents=prompt,
-        )
-        # Safely clean markdown code block wraps without generating multiline literal errors
-        clean_text = response.text.strip()
-        if clean_text.startswith("```"):
-            clean_text = clean_text.split("```")[1]
-            if clean_text.startswith("json"):
-                clean_text = clean_text[4:]
-        clean_text = clean_text.strip()
-        
-        return json.loads(clean_text)
-    except Exception as e:
-        return {
-            "regime_bias": "EXCEPTION", "vol_expansion": "ERROR", "duration_horizon": "ERROR",
-            "narrative": f"❌ **AI Server Communication Exception**: {str(e)}"
-        }
 
 # =====================================================
 # VOLATILE LOGIN PROTOCOL (FORCED RESET ON REFRESH)
@@ -236,7 +120,7 @@ CHAT_IDS  = st.secrets.get("CHAT_IDS", [])
 def send_telegram(message: str):
     if not BOT_TOKEN or not CHAT_IDS:
         return False, "Telegram vectors unconfigured."
-    url = f"[https://api.telegram.org/bot](https://api.telegram.org/bot){BOT_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     errors = []
     for chat_id in CHAT_IDS:
         try:
@@ -588,7 +472,7 @@ def render_live_dashboard(pair):
         eq = result["recent_low"] + ((result["recent_high"] - result["recent_low"]) * 0.5)
         fig.add_hline(y=eq, line_dash="dot", line_color="#FFFF00", annotation_text="Equilibrium (50%)")
 
-    fig.update_layout(title=f"🔥 LIVE {pair} (yFinance 15M Execution Matrix Map)", template="plotly_dark", height=450, xaxis_rangeslider_visible=False, uirevision="keep", margin=dict(l=10, r=10, t=40, b=10))
+    fig.update_layout(title=f"🔥 LIVE {pair} (yFinance 15M Execution Matrix Map)", template="plotly_dark", height=420, xaxis_rangeslider_visible=False, uirevision="keep", margin=dict(l=10, r=10, t=40, b=10))
     st.plotly_chart(fig, use_container_width=True)
 
     if "STRONG" in result["signal"] or "BUY" in result["signal"] or "SELL" in result["signal"]:
@@ -609,24 +493,11 @@ def render_live_dashboard(pair):
     c3.metric("Calculated Vector Range", f"{result['pips']} Pips")
     c4.metric("Active Session Window", result["session"])
 
-    st.markdown("### 🤖 Institutional AI Insight Matrix")
-    ai_data = run_cached_ai_analysis(result, pair)
-    
-    pred_col1, pred_col2, pred_col3 = st.columns(3)
-    with pred_col1:
-        st.markdown(f'<div class="prediction-card"><span style="color:#94A3B8;font-size:0.8rem;text-transform:uppercase;">Market Bias Regime</span><br><b style="color:#00F0FF;font-size:1.1rem;">{ai_data.get("regime_bias", "NEUTRAL")}</b></div>', unsafe_allow_html=True)
-    with pred_col2:
-        st.markdown(f'<div class="prediction-card"><span style="color:#94A3B8;font-size:0.8rem;text-transform:uppercase;">Volatility Expansion Status</span><br><b style="color:#A855F7;font-size:1.1rem;">{ai_data.get("vol_expansion", "MODERATE")}</b></div>', unsafe_allow_html=True)
-    with pred_col3:
-        st.markdown(f'<div class="prediction-card"><span style="color:#94A3B8;font-size:0.8rem;text-transform:uppercase;">Trend Duration Horizon</span><br><b style="color:#10B981;font-size:1.1rem;">{ai_data.get("duration_horizon", "SHORT-TERM")}</b></div>', unsafe_allow_html=True)
-
-    st.markdown(f'<div class="ai-analysis-box"><h5 style="margin-top:0;color:#8B5CF6;letter-spacing:0.05em;">🏦 STRATEGIC CONFLUENCE ANALYSIS SUMMARY</h5>{ai_data.get("narrative", "")}</div>', unsafe_allow_html=True)
-
     with st.expander("Engine Log Buffer (JSON)"):
         st.json(result)
 
     if "STRONG" in result["signal"] and result["pips"] >= 5.0:
-        audio_url = "[https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg](https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg)"
+        audio_url = "https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg"
         components.html(f'<audio autoplay><source src="{audio_url}" type="audio/ogg"></audio>', height=0)
         st.toast(f"🚨 STRATEGIC ALGO DETECTED SETUP ON {pair}!", icon="💰")
 
@@ -650,6 +521,33 @@ col_layout_left, col_layout_right = st.columns([1.8, 1.2])
 
 with col_layout_left:
     render_live_dashboard(selected_pair)
+    
+    # TRADINGVIEW REAL-TIME INTEL INTEGRATION ATTACHMENT
+    st.markdown("---")
+    st.subheader("📊 Live TradingView Stream Platform")
+    symbol_tv = f"OANDA:{selected_pair}"
+    html_widget = f"""
+    <div id="tv_chart_container"></div>
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+    <script type="text/javascript">
+    new TradingView.widget({{
+       "width": "100%",
+       "height": 500,
+       "symbol": "{symbol_tv}",
+       "interval": "15",
+       "timezone": "Etc/UTC",
+       "theme": "dark",
+       "style": "1",
+       "locale": "en",
+       "toolbar_bg": "#f1f3f6",
+       "enable_publishing": false,
+       "hide_side_toolbar": false,
+       "allow_symbol_change": true,
+       "container_id": "tv_chart_container"
+    }});
+    </script>
+    """
+    components.html(html_widget, height=520)
 
 with col_layout_right:
     render_scanner_block()
@@ -694,31 +592,3 @@ SYSTEM TIME STAMP: {current_result['timestamp']}
             st.success("✅ Broadcast system arrays systematically deployed to Telegram channels.")
         else:
             st.error(f"❌ Telegram pipeline distribution exception: {err}")
-
-# =====================================================
-# SUPPLEMENTARY QUANTITATIVE ANALYTICS (TRADINGVIEW)
-# =====================================================
-st.markdown("---")
-st.subheader("📊 Supplementary Quantitative Analytics Stream")
-symbol_tv = f"OANDA:{selected_pair}"
-html_widget = f"""
-<script src="[https://s3.tradingview.com/tv.js](https://s3.tradingview.com/tv.js)"></script>
-<div id="tv_chart_container"></div>
-<script>
-new TradingView.widget({{
-   "symbol": "{symbol_tv}",
-   "interval": "15",
-   "container_id": "tv_chart_container",
-   "width": "100%",
-   "height": 500,
-   "theme": "dark",
-   "style": "1",
-   "locale": "en",
-   "toolbar_bg": "#f1f3f6",
-   "enable_publishing": false,
-   "hide_side_toolbar": false,
-   "allow_symbol_change": true
-}});
-</script>
-"""
-components.html(html_widget, height=520)
