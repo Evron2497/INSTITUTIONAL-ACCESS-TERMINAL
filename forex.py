@@ -83,13 +83,26 @@ st.markdown("""
 # =====================================================
 # AI API INITIALIZATION LAYER (GOOGLE AI STUDIO)
 # =====================================================
-GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
+# =====================================================
+# AI API INITIALIZATION LAYER (GOOGLE AI STUDIO)
+# =====================================================
+# Force it to read as a clean string and strip accidental whitespace
+GEMINI_API_KEY = str(st.secrets.get("GEMINI_API_KEY", "")).strip()
 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    ai_model = genai.GenerativeModel('gemini-1.5-flash')
+# Fallback check: If Streamlit secrets fails, check environment variables
+if not GEMINI_API_KEY or GEMINI_API_KEY == "None":
+    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
+if GEMINI_API_KEY and GEMINI_API_KEY.startswith("AIzaSy"):
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        ai_model = genai.GenerativeModel('gemini-1.5-flash')
+    except Exception as e:
+        st.sidebar.error(f"AI Init Error: {e}")
+        ai_model = None
 else:
     ai_model = None
+    st.sidebar.warning("⚠️ Gemini API Key missing or invalid format (Should start with AIzaSy)")
 
 # =====================================================
 # LOGIN SYSTEM
