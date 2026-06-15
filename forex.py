@@ -293,16 +293,15 @@ def calculate_pips(entry, tp, pair):
     return round(abs(tp - entry) / pip_value, 1)
 
 # =====================================================
-# NEW: STRICT DETAILED ICT RULE IMPLEMENTATIONS
+# UPGRADED HIGH PRECISE STRUCTURAL SIGNALS DETECTION
 # =====================================================
 def detect_ict_structural_shifts(df: pd.DataFrame, left=5, right=5):
     """
-    Detects true market structural transformations (MSS vs BOS) and Liquidity Sweeps
-    backed strictly by displacement parameters (candle body vs wick breaks).
+    Advanced pattern tracking mapping out true Liquidity Sweeps 
+    and proper validation of counter-trend Market Structure Shifts (MSS).
     """
     df_pivots = calculate_swing_pivots(df, left_bars=left, right_bars=right)
     
-    # Extract trailing historical valid pivot sequences
     highs_idx = df_pivots["Swing_High"].dropna().index
     lows_idx = df_pivots["Swing_Low"].dropna().index
     
@@ -319,51 +318,43 @@ def detect_ict_structural_shifts(df: pd.DataFrame, left=5, right=5):
         current_high = df_pivots["High"].iloc[-1]
         current_low = df_pivots["Low"].iloc[-1]
         
-        # --- LIQUIDITY SWEEP STRATEGIES (Wick goes out, close remains inside) ---
+        # --- 1. LIQUIDITY SWEEP PROTOCOLS (Wick hunt breaks outer bound, close inside) ---
         if current_high > last_sh and current_close < last_sh:
             sweep_bsl = True
         if current_low < last_sl and current_close > last_sl:
             sweep_ssl = True
             
-        # --- MARKET STRUCTURE SHIFT & DISPLACEMENT (Requires absolute body close cross) ---
-        # MSS breaks a counter-trend swing high/low; BOS continues the matching trend sequence
+        # --- 2. STRUCTURAL BREAK SHIFTS WITH DISPLACEMENT (Body Close Requirement) ---
         if current_close > last_sh:
-            if last_sh < prev_sh: # Lower High broken -> Counter Trend Shift
+            if last_sh < prev_sh:  # Valid Lower High broken = Trend Shift (MSS)
                 mss_bullish = True
-            else: # Higher High broken -> Trend Continuation
+            else:                  # Higher High broken = Trend Continuation (BOS)
                 bos_bullish = True
                 
         if current_close < last_sl:
-            if last_sl > prev_sl: # Higher Low broken -> Counter Trend Shift
+            if last_sl > prev_sl:  # Valid Higher Low broken = Trend Shift (MSS)
                 mss_bearish = True
-            else: # Lower Low broken -> Trend Continuation
+            else:                  # Lower Low broken = Trend Continuation (BOS)
                 bos_bearish = True
 
     return mss_bullish, mss_bearish, bos_bullish, bos_bearish, sweep_bsl, sweep_ssl
 
 def detect_fvg(df, lookback=25):
-    """Finds unmitigated Fair Value Gaps in current delivery ranges"""
     fvg_buy = fvg_sell = False
-    # Check candles back to trace unfilled multi-bar imbalances
     for i in range(2, min(lookback, len(df) - 1)):
-        # Bullish Imbalance: Low of Candle 3 is greater than High of Candle 1
         if df["Low"].iloc[-i+1] > df["High"].iloc[-i-1]:
             fvg_buy = True
-        # Bearish Imbalance: High of Candle 3 is less than Low of Candle 1
         if df["High"].iloc[-i+1] < df["Low"].iloc[-i-1]:
             fvg_sell = True
     return fvg_buy, fvg_sell
 
 def detect_order_block(df):
-    """Tracks valid down/up-close institutional footprints before displacement runs"""
     ob_bull = ob_bear = False
     for i in range(3, min(20, len(df))):
         candle = df.iloc[-i]
         next_two = df.iloc[-i+1:-i+3]
-        # Bullish OB: Last down candle before strong up move breaking structural highs
         if candle["Close"] < candle["Open"] and all(next_two["Close"] > next_two["Open"]):
             ob_bull = True
-        # Bearish OB: Last up candle before strong down move breaking structural lows
         if candle["Close"] > candle["Open"] and all(next_two["Close"] < next_two["Open"]):
             ob_bear = True
     return ob_bull, ob_bear
@@ -414,7 +405,7 @@ def neutral_result():
     }
 
 # =====================================================
-# UPGRADED CONFLUENCE TRADING ORDER ENGINE
+# UPGRADED SEQUENTIAL CONFLUENCE TRADING ORDER ENGINE
 # =====================================================
 def institutional_engine(df, pair):
     if df is None or df.empty or len(df) < 50:
@@ -423,14 +414,14 @@ def institutional_engine(df, pair):
     pip_multiplier = 0.01 if "JPY" in pair.upper() else (0.10 if "XAU" in pair.upper() else 0.0001)
     atr_val = calculate_atr(df)
 
-    # Multi-Timeframe High-Timeframe Directional Bias
+    # --- RULE 1: Higher Timeframe Directional Matrix (M30 Control Filter) ---
     df_m30 = get_data_yf(pair, interval="30m", period="5d")
     htf_bias = "NEUTRAL"
     if df_m30 is not None and not df_m30.empty and len(df_m30) >= 30:
         m30_ema = df_m30["Close"].ewm(span=30).mean().iloc[-1]
         htf_bias = "BULLISH" if df_m30["Close"].iloc[-1] > m30_ema else "BEARISH"
 
-    # Pivot Framework Allocation
+    # Framework Parameters Mapping
     df = calculate_swing_pivots(df, left_bars=5, right_bars=5)
     valid_highs = df["Swing_High"].dropna()
     valid_lows = df["Swing_Low"].dropna()
@@ -442,49 +433,49 @@ def institutional_engine(df, pair):
     is_in_discount = price < midpoint
     is_in_premium = price > midpoint
 
-    # Gather Structural Metrics
+    # Detect Component Layouts
     mss_bull, mss_bear, bos_bull, bos_bear, sweep_bsl, sweep_ssl = detect_ict_structural_shifts(df)
     fvg_buy, fvg_sell = detect_fvg(df)
     ob_bull, ob_bear = detect_order_block(df)
     amd_buy, amd_sell = detect_amd_pattern(df)
     div_buy, div_sell = detect_rsi_divergence(df)
 
-    # Confluence Score Framework Weight Matrix Calculation
     buy_score = 0
     sell_score = 0
 
-    if htf_bias == "BULLISH": buy_score += 15
-    if htf_bias == "BEARISH": sell_score += 15
-    
-    # High-Weight Structural Triggers (MSS and Liquidity Sweeps)
-    if mss_bull: buy_score += 30
-    if mss_bear: sell_score += 30
-    if bos_bull: buy_score += 15
-    if bos_bear: sell_score += 15
-    if sweep_ssl: buy_score += 25
-    if sweep_bsl: sell_score += 25
+    # --- RULE 2 & 3 SEQUENTIAL HIERARCHY VERIFICATION ---
+    # Trigger conditions for Longs: Liquidity must be swept OR structure must cleanly shift counter-trend
+    if sweep_ssl or mss_bull:
+        buy_score += 20 if htf_bias == "BULLISH" else 5
+        if mss_bull: buy_score += 35     # Structural Shift points weight allocation
+        if sweep_ssl: buy_score += 25    # Liquidity Sweep weight mapping
+        if bos_bull: buy_score += 10     # Secondary momentum continuation tracking
+        
+        # Premium/Discount Matrix Array Confluences (Only if initial conditions pass)
+        if ob_bull: buy_score += 15
+        if fvg_buy: buy_score += 15
+        buy_score += amd_buy
+        buy_score += div_buy
 
-    # Premium/Discount Matrix Arrays Confluences
-    if ob_bull: buy_score += 20
-    if ob_bear: sell_score += 20
-    if fvg_buy: buy_score += 15
-    if fvg_sell: sell_score += 15
-    
-    buy_score += amd_buy
-    sell_score += amd_sell
-    buy_score += div_buy
-    sell_score += div_sell
+    # Trigger conditions for Shorts: Buy-Side Liquidity swept OR Bearish MSS confirmed
+    if sweep_bsl or mss_bear:
+        sell_score += 20 if htf_bias == "BEARISH" else 5
+        if mss_bear: sell_score += 35
+        if sweep_bsl: sell_score += 25
+        if bos_bear: sell_score += 10
+        
+        if ob_bear: sell_score += 15
+        if fvg_sell: sell_score += 15
+        sell_score += amd_sell
+        sell_score += div_sell
 
-    # STRICT ENVIRONMENT COMPLIANCE RULES:
-    # Rule 1: No long executions inside Premium ranges. Cut buy score down completely if true.
-    # Rule 2: No short executions inside Discount ranges. Cut sell score down completely if true.
-    if not is_in_discount: buy_score = int(buy_score * 0.10)
-    if not is_in_premium: sell_score = int(sell_score * 0.10)
+    # --- RULE 4: Math Premium vs Discount Guardrail Execution ---
+    if not is_in_discount: buy_score = int(buy_score * 0.10)   # Violates rule -> Slashed down to max 10%
+    if not is_in_premium: sell_score = int(sell_score * 0.10) # Violates rule -> Slashed down to max 10%
 
     signal = "NEUTRAL"
     confidence = max(buy_score, sell_score)
 
-    # Threshold Qualification Verification
     if buy_score >= 75: signal = "STRONG BUY (A+ Setup)"
     elif buy_score >= 50: signal = "BUY"
     
@@ -494,7 +485,7 @@ def institutional_engine(df, pair):
     entry = price
     tp, sl = entry, entry
 
-    # Trade Management Rules Setup Mapping
+    # Trade Execution Mapping Parameters
     if "BUY" in signal:
         tp = recent_high
         if (tp - entry) / pip_multiplier < 12.0: tp = entry + (15 * pip_multiplier)
@@ -507,7 +498,6 @@ def institutional_engine(df, pair):
     pips = calculate_pips(entry, tp, pair) if "NEUTRAL" not in signal else 0
     rsi_val = rsi(df)
 
-    # Complex Structure String formatting
     struct_str = f"M30: {htf_bias} | Range: {'DISCOUNT' if is_in_discount else 'PREMIUM'} | "
     if mss_bull or mss_bear: struct_str += "MSS CONFIRMED"
     elif sweep_bsl or sweep_ssl: struct_str += "LIQUIDITY RUN DETECTED"
