@@ -10,10 +10,12 @@ import streamlit.components.v1 as components
 import plotly.graph_objects as go
 import yfinance as yf
 
+
 # =====================================================
 # MODERN GOOGLE AI MULTI-AUTH SDK UPGRADE
 # =====================================================
 from google import genai
+from google.oauth2.credentials import Credentials
 from google.genai import types
 
 # =====================================================
