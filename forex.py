@@ -86,7 +86,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =====================================================
-# AI API INITIALIZATION LAYER (UNIVERSAL CLIENT STATE)
+# =====================================================
+# AI API INITIALIZATION LAYER (VERTEX AI COMPATIBLE)
 # =====================================================
 GEMINI_API_KEY = str(st.secrets.get("GEMINI_API_KEY", "")).strip()
 
@@ -94,17 +95,63 @@ if not GEMINI_API_KEY or GEMINI_API_KEY == "None":
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 ai_client = None
+is_vertex = False
 
 if GEMINI_API_KEY:
     try:
-        # The modern Client constructor handles both direct API keys and GCP service tokens natively
-        ai_client = genai.Client(api_key=GEMINI_API_KEY)
-        st.sidebar.success("🤖 Institutional AI Engine Authenticated!")
+        if GEMINI_API_KEY.startswith("AQ."):
+            # For GCP enterprise tokens, route via Vertex AI architecture
+            ai_client = genai.Client(vertex=True, credentials=GEMINI_API_KEY)
+            is_vertex = True
+            st.sidebar.success("🤖 Vertex AI Engine Authenticated!")
+        else:
+            # For standard Developer keys (AIzaSy)
+            ai_client = genai.Client(api_key=GEMINI_API_KEY)
+            is_vertex = False
+            st.sidebar.success("🤖 Google AI Studio Authenticated!")
     except Exception as e:
         st.sidebar.error(f"AI Init Error: {e}")
         ai_client = None
 else:
     st.sidebar.warning("⚠️ Waiting for a valid API Key entry in secrets...")
+
+# =====================================================
+# GOOGLE GEMINI AI CONTEXTUAL ANALYZER (ROUTING FIXED)
+# =====================================================
+@st.cache_data(ttl=60)
+def run_cached_ai_analysis(res, pair):
+    if not ai_client:
+        return "⚠️ **AI Engine Offline**: Initialize your setup keys by assigning a valid `GEMINI_API_KEY` token string inside the active environment secrets payload."
+
+    prompt = f"""
+    You are an expert institutional risk engineer and quant operator specializing in Inner Circle Trader (ICT) setups and Smart Money Concepts (SMC).
+    Run an advanced executive confluence risk validation sweep on the market telemetry parameters captured below for {pair}.
+    
+    Matrix Variables:
+    - Current Matrix Signal: {res['signal']}
+    - Engine Confidence Factor: {res['confidence']}%
+    - Multi-Timeframe Structural Bias: {res['structure']}
+    - Momentum RSI Scalar: {res['rsi']}
+    - Fair Value Gap Verification: {res['fvg_status']}
+    - System Order Block Allocation: {res['ob_status']}
+    - Session Pattern Recognition Strategy: {res['pattern']}
+    - Momentum Wick Divergence State: {res['divergence']}
+    - Active Macro Time Window: {res['session']}
+
+    Provide an elite, highly concise trading-desk layout analysis formatted strictly as 3 structural bullet points using professional quant terminology. 
+    Explicitly detail if any underlying technical discrepancies exist (e.g., trying to buy within a Premium pricing band or selling inside a Discount zone). Keep it punchy, aggressive, and highly readable.
+    """
+    try:
+        # Vertex AI uses 'gemini-1.5-flash-001', AI Studio uses 'gemini-1.5-flash'
+        target_model = 'gemini-1.5-flash-001' if is_vertex else 'gemini-1.5-flash'
+        
+        response = ai_client.models.generate_content(
+            model=target_model,
+            contents=prompt,
+        )
+        return response.text
+    except Exception as e:
+        return f"❌ **AI Server Communication Exception**: {str(e)}"
 
 # =====================================================
 # LOGIN SYSTEM
