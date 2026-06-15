@@ -80,8 +80,15 @@ st.markdown("""
             border-left: 4px solid #8B5CF6;
             padding: 20px;
             border-radius: 0 12px 12px 0;
-            margin-top: 20px;
+            margin-top: 15px;
             box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+        }
+        .prediction-card {
+            background: #111827;
+            border: 1px solid #1E293B;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 10px;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -123,16 +130,21 @@ else:
     st.sidebar.warning("⚠️ Waiting for a valid API Key entry in secrets...")
 
 # =====================================================
-# GOOGLE GEMINI AI CONTEXTUAL ANALYZER
+# GOOGLE GEMINI AI CONTEXTUAL ANALYZER (JSON EXPECTED)
 # =====================================================
 @st.cache_data(ttl=60)
 def run_cached_ai_analysis(res, pair):
+    default_offline = {
+        "regime_bias": "OFFLINE", "vol_expansion": "UNKNOWN", "duration_horizon": "UNKNOWN",
+        "narrative": "⚠️ **AI Engine Offline**: Initialize your setup keys by assigning a valid `GEMINI_API_KEY` token string inside environment secrets."
+    }
+    
     if not ai_client:
-        return "⚠️ **AI Engine Offline**: Initialize your setup keys by assigning a valid `GEMINI_API_KEY` token string inside environment secrets."
+        return default_offline
 
     prompt = f"""
     You are an expert institutional risk engineer and quant operator specializing in Inner Circle Trader (ICT) setups and Smart Money Concepts (SMC).
-    Run an advanced executive confluence risk validation sweep on the market telemetry parameters captured below for {pair}.
+    Run an advanced executive confluence risk validation sweep and structured data analysis on the market telemetry parameters captured below for {pair}.
     
     Matrix Variables:
     - Current Matrix Signal: {res['signal']}
@@ -145,8 +157,13 @@ def run_cached_ai_analysis(res, pair):
     - Momentum Wick Divergence State: {res['divergence']}
     - Active Macro Time Window: {res['session']}
 
-    Provide an elite, highly concise trading-desk layout analysis formatted strictly as 3 structural bullet points using professional quant terminology. 
-    Explicitly detail if any underlying technical discrepancies exist (e.g., trying to buy within a Premium pricing band or selling inside a Discount zone). Keep it punchy, aggressive, and highly readable.
+    You must output a strictly formatted raw JSON block. Do not include markdown formatting wrappers (like ```json). The structure must exactly match this layout:
+    {{
+        "regime_bias": "BULLISH REVERSAL / BEARISH EXPANSION / CONSOLIDATION CHOP",
+        "vol_expansion": "HIGH EXPECTATION / MODERATE / COMPRESSED",
+        "duration_horizon": "NEXT 2-4 HOURS / INDETERMINATE",
+        "narrative": "Provide exactly 3 punchy bullet points using hardcore professional quantitative forex jargon explaining structural discrepancies, pricing bands (Premium vs Discount conflicts), and invalidation zones."
+    }}
     """
     try:
         target_model = 'gemini-1.5-flash-001' if is_vertex else 'gemini-1.5-flash'
@@ -154,9 +171,14 @@ def run_cached_ai_analysis(res, pair):
             model=target_model,
             contents=prompt,
         )
-        return response.text
+        # Parse output safely and sanitize potential block ticks from model responses
+        clean_text = response.text.strip().replace("```json", "").replace("```", "")
+        return json.loads(clean_text)
     except Exception as e:
-        return f"❌ **AI Server Communication Exception**: {str(e)}"
+        return {
+            "regime_bias": "EXCEPTION", "vol_expansion": "ERROR", "duration_horizon": "ERROR",
+            "narrative": f"❌ **AI Server Communication Exception**: {str(e)}"
+        }
 
 # =====================================================
 # PERSISTENT LOGIN MANAGEMENT (FIXED REFRESH LOOP)
@@ -203,7 +225,7 @@ CHAT_IDS  = st.secrets.get("CHAT_IDS", [])
 def send_telegram(message: str):
     if not BOT_TOKEN or not CHAT_IDS:
         return False, "Telegram vectors unconfigured."
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    url = f"[https://api.telegram.org/bot](https://api.telegram.org/bot){BOT_TOKEN}/sendMessage"
     errors = []
     for chat_id in CHAT_IDS:
         try:
@@ -576,15 +598,29 @@ def render_live_dashboard(pair):
     c3.metric("Calculated Vector Range", f"{result['pips']} Pips")
     c4.metric("Active Session Window", result["session"])
 
+    # =====================================================
+    # NEW: AI REGIME PREDICTION COMPONENT LAYER
+    # =====================================================
     st.markdown("### 🤖 Institutional AI Insight Matrix")
-    ai_text_block = run_cached_ai_analysis(result, pair)
-    st.markdown(f'<div class="ai-analysis-box">{ai_text_block}</div>', unsafe_allow_html=True)
+    ai_data = run_cached_ai_analysis(result, pair)
+    
+    # Grid of structural engine inferences
+    pred_col1, pred_col2, pred_col3 = st.columns(3)
+    with pred_col1:
+        st.markdown(f'<div class="prediction-card"><span style="color:#94A3B8;font-size:0.8rem;text-transform:uppercase;">Market Bias Regime</span><br><b style="color:#00F0FF;font-size:1.1rem;">{ai_data.get("regime_bias", "NEUTRAL")}</b></div>', unsafe_allow_html=True)
+    with pred_col2:
+        st.markdown(f'<div class="prediction-card"><span style="color:#94A3B8;font-size:0.8rem;text-transform:uppercase;">Volatility Expansion Status</span><br><b style="color:#A855F7;font-size:1.1rem;">{ai_data.get("vol_expansion", "MODERATE")}</b></div>', unsafe_allow_html=True)
+    with pred_col3:
+        st.markdown(f'<div class="prediction-card"><span style="color:#94A3B8;font-size:0.8rem;text-transform:uppercase;">Trend Duration Horizon</span><br><b style="color:#10B981;font-size:1.1rem;">{ai_data.get("duration_horizon", "SHORT-TERM")}</b></div>', unsafe_allow_html=True)
+
+    # Contextual structured summary markdown narrative box
+    st.markdown(f'<div class="ai-analysis-box"><h5 style="margin-top:0;color:#8B5CF6;letter-spacing:0.05em;">🏦 STRATEGIC CONFLUENCE ANALYSIS SUMMARY</h5>{ai_data.get("narrative", "")}</div>', unsafe_allow_html=True)
 
     with st.expander("Engine Log Buffer (JSON)"):
         st.json(result)
 
     if "STRONG" in result["signal"] and result["pips"] >= 12.0:
-        audio_url = "https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg"
+        audio_url = "[https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg](https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg)"
         components.html(f'<audio autoplay><source src="{audio_url}" type="audio/ogg"></audio>', height=0)
         st.toast(f"🚨 STRATEGIC ALGO DETECTED SETUP ON {pair}!", icon="💰")
 
@@ -660,7 +696,7 @@ st.markdown("---")
 st.subheader("📊 Supplementary Quantitative Analytics Stream")
 symbol_tv = f"OANDA:{selected_pair}"
 html_widget = f"""
-<script src="https://s3.tradingview.com/tv.js"></script>
+<script src="[https://s3.tradingview.com/tv.js](https://s3.tradingview.com/tv.js)"></script>
 <div id="tv_chart_container"></div>
 <script>
 new TradingView.widget({{
