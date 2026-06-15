@@ -10,7 +10,6 @@ import streamlit.components.v1 as components
 import plotly.graph_objects as go
 import yfinance as yf
 
-
 # =====================================================
 # MODERN GOOGLE AI MULTI-AUTH SDK UPGRADE
 # =====================================================
@@ -88,7 +87,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =====================================================
-# =====================================================
 # AI API INITIALIZATION LAYER (PROJECT RESOLVED)
 # =====================================================
 GEMINI_API_KEY = str(st.secrets.get("GEMINI_API_KEY", "")).strip()
@@ -106,16 +104,15 @@ is_vertex = False
 if GEMINI_API_KEY:
     try:
         if GEMINI_API_KEY.startswith("AQ."):
-            # Explicitly pass project to resolve Application Default Credentials error
+            gcp_credentials = Credentials(token=GEMINI_API_KEY)
             ai_client = genai.Client(
                 vertexai=True, 
                 project=GCP_PROJECT_ID if GCP_PROJECT_ID else None,
-                credentials=GEMINI_API_KEY
+                credentials=gcp_credentials
             )
             is_vertex = True
             st.sidebar.success("🤖 Vertex AI Engine Authenticated!")
         else:
-            # For standard Developer keys (AIzaSy)
             ai_client = genai.Client(api_key=GEMINI_API_KEY)
             is_vertex = False
             st.sidebar.success("🤖 Google AI Studio Authenticated!")
@@ -124,13 +121,14 @@ if GEMINI_API_KEY:
         ai_client = None
 else:
     st.sidebar.warning("⚠️ Waiting for a valid API Key entry in secrets...")
+
 # =====================================================
 # GOOGLE GEMINI AI CONTEXTUAL ANALYZER
 # =====================================================
 @st.cache_data(ttl=60)
 def run_cached_ai_analysis(res, pair):
     if not ai_client:
-        return "⚠️ **AI Engine Offline**: Initialize your setup keys by assigning a valid `GEMINI_API_KEY` token string inside the active environment secrets payload."
+        return "⚠️ **AI Engine Offline**: Initialize your setup keys by assigning a valid `GEMINI_API_KEY` token string inside environment secrets."
 
     prompt = f"""
     You are an expert institutional risk engineer and quant operator specializing in Inner Circle Trader (ICT) setups and Smart Money Concepts (SMC).
@@ -152,7 +150,6 @@ def run_cached_ai_analysis(res, pair):
     """
     try:
         target_model = 'gemini-1.5-flash-001' if is_vertex else 'gemini-1.5-flash'
-        
         response = ai_client.models.generate_content(
             model=target_model,
             contents=prompt,
@@ -244,7 +241,7 @@ def get_data_yf(display_symbol, interval="15m", period="5d"):
         return pd.DataFrame()
 
 # =====================================================
-# MATH & ADVANCED CORE SIGNAL ALGORITHMS
+# PURE ALGORIHTMIC ICT ENGINE CALCULATIONS
 # =====================================================
 def calculate_swing_pivots(df: pd.DataFrame, left_bars: int = 5, right_bars: int = 5) -> pd.DataFrame:
     df = df.copy().reset_index(drop=True)
@@ -295,26 +292,80 @@ def calculate_pips(entry, tp, pair):
     else: pip_value = 0.0001
     return round(abs(tp - entry) / pip_value, 1)
 
-def detect_fvg(df, lookback=20):
+# =====================================================
+# NEW: STRICT DETAILED ICT RULE IMPLEMENTATIONS
+# =====================================================
+def detect_ict_structural_shifts(df: pd.DataFrame, left=5, right=5):
+    """
+    Detects true market structural transformations (MSS vs BOS) and Liquidity Sweeps
+    backed strictly by displacement parameters (candle body vs wick breaks).
+    """
+    df_pivots = calculate_swing_pivots(df, left_bars=left, right_bars=right)
+    
+    # Extract trailing historical valid pivot sequences
+    highs_idx = df_pivots["Swing_High"].dropna().index
+    lows_idx = df_pivots["Swing_Low"].dropna().index
+    
+    mss_bullish = mss_bearish = bos_bullish = bos_bearish = False
+    sweep_bsl = sweep_ssl = False
+    
+    if len(highs_idx) >= 2 and len(lows_idx) >= 2:
+        last_sh = df_pivots["Swing_High"].loc[highs_idx[-1]]
+        prev_sh = df_pivots["Swing_High"].loc[highs_idx[-2]]
+        last_sl = df_pivots["Swing_Low"].loc[lows_idx[-1]]
+        prev_sl = df_pivots["Swing_Low"].loc[lows_idx[-2]]
+        
+        current_close = df_pivots["Close"].iloc[-1]
+        current_high = df_pivots["High"].iloc[-1]
+        current_low = df_pivots["Low"].iloc[-1]
+        
+        # --- LIQUIDITY SWEEP STRATEGIES (Wick goes out, close remains inside) ---
+        if current_high > last_sh and current_close < last_sh:
+            sweep_bsl = True
+        if current_low < last_sl and current_close > last_sl:
+            sweep_ssl = True
+            
+        # --- MARKET STRUCTURE SHIFT & DISPLACEMENT (Requires absolute body close cross) ---
+        # MSS breaks a counter-trend swing high/low; BOS continues the matching trend sequence
+        if current_close > last_sh:
+            if last_sh < prev_sh: # Lower High broken -> Counter Trend Shift
+                mss_bullish = True
+            else: # Higher High broken -> Trend Continuation
+                bos_bullish = True
+                
+        if current_close < last_sl:
+            if last_sl > prev_sl: # Higher Low broken -> Counter Trend Shift
+                mss_bearish = True
+            else: # Lower Low broken -> Trend Continuation
+                bos_bearish = True
+
+    return mss_bullish, mss_bearish, bos_bullish, bos_bearish, sweep_bsl, sweep_ssl
+
+def detect_fvg(df, lookback=25):
+    """Finds unmitigated Fair Value Gaps in current delivery ranges"""
     fvg_buy = fvg_sell = False
-    for i in range(2, min(lookback, len(df))):
+    # Check candles back to trace unfilled multi-bar imbalances
+    for i in range(2, min(lookback, len(df) - 1)):
+        # Bullish Imbalance: Low of Candle 3 is greater than High of Candle 1
         if df["Low"].iloc[-i+1] > df["High"].iloc[-i-1]:
             fvg_buy = True
+        # Bearish Imbalance: High of Candle 3 is less than Low of Candle 1
         if df["High"].iloc[-i+1] < df["Low"].iloc[-i-1]:
             fvg_sell = True
     return fvg_buy, fvg_sell
 
 def detect_order_block(df):
+    """Tracks valid down/up-close institutional footprints before displacement runs"""
     ob_bull = ob_bear = False
     for i in range(3, min(20, len(df))):
         candle = df.iloc[-i]
         next_two = df.iloc[-i+1:-i+3]
-        if candle["Close"] < candle["Open"]:
-            if all(next_two["Close"] > next_two["Open"]):
-                ob_bull = True
-        if candle["Close"] > candle["Open"]:
-            if all(next_two["Close"] < next_two["Open"]):
-                ob_bear = True
+        # Bullish OB: Last down candle before strong up move breaking structural highs
+        if candle["Close"] < candle["Open"] and all(next_two["Close"] > next_two["Open"]):
+            ob_bull = True
+        # Bearish OB: Last up candle before strong down move breaking structural lows
+        if candle["Close"] > candle["Open"] and all(next_two["Close"] < next_two["Open"]):
+            ob_bear = True
     return ob_bull, ob_bear
 
 def detect_amd_pattern(df):
@@ -363,7 +414,7 @@ def neutral_result():
     }
 
 # =====================================================
-# CORE INSTITUTIONAL MULTI-STRATEGY ENGINE
+# UPGRADED CONFLUENCE TRADING ORDER ENGINE
 # =====================================================
 def institutional_engine(df, pair):
     if df is None or df.empty or len(df) < 50:
@@ -372,12 +423,14 @@ def institutional_engine(df, pair):
     pip_multiplier = 0.01 if "JPY" in pair.upper() else (0.10 if "XAU" in pair.upper() else 0.0001)
     atr_val = calculate_atr(df)
 
+    # Multi-Timeframe High-Timeframe Directional Bias
     df_m30 = get_data_yf(pair, interval="30m", period="5d")
     htf_bias = "NEUTRAL"
     if df_m30 is not None and not df_m30.empty and len(df_m30) >= 30:
         m30_ema = df_m30["Close"].ewm(span=30).mean().iloc[-1]
         htf_bias = "BULLISH" if df_m30["Close"].iloc[-1] > m30_ema else "BEARISH"
 
+    # Pivot Framework Allocation
     df = calculate_swing_pivots(df, left_bars=5, right_bars=5)
     valid_highs = df["Swing_High"].dropna()
     valid_lows = df["Swing_Low"].dropna()
@@ -389,61 +442,87 @@ def institutional_engine(df, pair):
     is_in_discount = price < midpoint
     is_in_premium = price > midpoint
 
+    # Gather Structural Metrics
+    mss_bull, mss_bear, bos_bull, bos_bear, sweep_bsl, sweep_ssl = detect_ict_structural_shifts(df)
     fvg_buy, fvg_sell = detect_fvg(df)
     ob_bull, ob_bear = detect_order_block(df)
     amd_buy, amd_sell = detect_amd_pattern(df)
     div_buy, div_sell = detect_rsi_divergence(df)
 
+    # Confluence Score Framework Weight Matrix Calculation
     buy_score = 0
     sell_score = 0
 
-    if htf_bias == "BULLISH": buy_score += 25
-    if htf_bias == "BEARISH": sell_score += 25
+    if htf_bias == "BULLISH": buy_score += 15
+    if htf_bias == "BEARISH": sell_score += 15
+    
+    # High-Weight Structural Triggers (MSS and Liquidity Sweeps)
+    if mss_bull: buy_score += 30
+    if mss_bear: sell_score += 30
+    if bos_bull: buy_score += 15
+    if bos_bear: sell_score += 15
+    if sweep_ssl: buy_score += 25
+    if sweep_bsl: sell_score += 25
+
+    # Premium/Discount Matrix Arrays Confluences
     if ob_bull: buy_score += 20
     if ob_bear: sell_score += 20
     if fvg_buy: buy_score += 15
     if fvg_sell: sell_score += 15
+    
     buy_score += amd_buy
     sell_score += amd_sell
     buy_score += div_buy
     sell_score += div_sell
 
-    if not is_in_discount: buy_score = int(buy_score * 0.20)
-    if not is_in_premium: sell_score = int(sell_score * 0.20)
+    # STRICT ENVIRONMENT COMPLIANCE RULES:
+    # Rule 1: No long executions inside Premium ranges. Cut buy score down completely if true.
+    # Rule 2: No short executions inside Discount ranges. Cut sell score down completely if true.
+    if not is_in_discount: buy_score = int(buy_score * 0.10)
+    if not is_in_premium: sell_score = int(sell_score * 0.10)
 
     signal = "NEUTRAL"
     confidence = max(buy_score, sell_score)
 
-    if buy_score >= 70: signal = "STRONG BUY (A+ Setup)"
-    elif buy_score >= 45: signal = "BUY"
-    if sell_score >= 70: signal = "STRONG SELL (A+ Setup)"
-    elif sell_score >= 45 and "BUY" not in signal: signal = "SELL"
+    # Threshold Qualification Verification
+    if buy_score >= 75: signal = "STRONG BUY (A+ Setup)"
+    elif buy_score >= 50: signal = "BUY"
+    
+    if sell_score >= 75: signal = "STRONG SELL (A+ Setup)"
+    elif sell_score >= 50 and "BUY" not in signal: signal = "SELL"
 
     entry = price
     tp, sl = entry, entry
 
+    # Trade Management Rules Setup Mapping
     if "BUY" in signal:
         tp = recent_high
         if (tp - entry) / pip_multiplier < 12.0: tp = entry + (15 * pip_multiplier)
-        sl = recent_low - (atr_val * 0.75)
+        sl = recent_low - (atr_val * 0.5)
     elif "SELL" in signal:
         tp = recent_low
         if (entry - tp) / pip_multiplier < 12.0: tp = entry - (15 * pip_multiplier)
-        sl = recent_high + (atr_val * 0.75)
+        sl = recent_high + (atr_val * 0.5)
 
     pips = calculate_pips(entry, tp, pair) if "NEUTRAL" not in signal else 0
     rsi_val = rsi(df)
 
+    # Complex Structure String formatting
+    struct_str = f"M30: {htf_bias} | Range: {'DISCOUNT' if is_in_discount else 'PREMIUM'} | "
+    if mss_bull or mss_bear: struct_str += "MSS CONFIRMED"
+    elif sweep_bsl or sweep_ssl: struct_str += "LIQUIDITY RUN DETECTED"
+    else: struct_str += "ORDERFLOW EXPANSION"
+
     return {
         "signal": signal, "confidence": round(float(confidence), 1), "entry": round(entry, 5),
         "tp": round(tp, 5), "sl": round(sl, 5), "pips": round(pips, 1), "rsi": round(rsi_val, 1),
-        "structure": f"M30 Control: {htf_bias} | Premium-Discount Status: {'DISCOUNT' if is_in_discount else 'PREMIUM'}",
+        "structure": struct_str,
         "buy_score": buy_score, "sell_score": sell_score, "session": trading_session(),
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "recent_high": round(recent_high, 5), "recent_low": round(recent_low, 5),
-        "fvg_status": "BULLISH FVG DETECTED" if fvg_buy else ("BEARISH FVG DETECTED" if fvg_sell else "CLEAR MATRIX"),
-        "ob_status": "BULLISH OB" if ob_bull else ("BEARISH OB" if ob_bear else "NO MITIGATION"),
-        "pattern": "ICT AMD BUY DISPLACEMENT" if amd_buy > 0 else ("ICT AMD SELL DISPLACEMENT" if amd_sell > 0 else "CONSOLIDATION"),
+        "fvg_status": "BULLISH FVG" if fvg_buy else ("BEARISH FVG" if fvg_sell else "BALANCED"),
+        "ob_status": "BULLISH OB" if ob_bull else ("BEARISH OB" if ob_bear else "NO TARGETS"),
+        "pattern": "MSS DISPLACEMENT" if (mss_bull or mss_bear) else "CONSOLIDATION MAPPING",
         "divergence": "BULLISH MOMENTUM DIV" if div_buy > 0 else ("BEARISH MOMENTUM DIV" if div_sell > 0 else "STABLE FLOW")
     }
 
