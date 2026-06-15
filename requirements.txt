@@ -8,4 +8,4 @@ requests
 plotly
 yfinance
 streamlit-autorefresh
-google-generativeai
+google-genai
