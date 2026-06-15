@@ -89,6 +89,9 @@ st.markdown("""
 # =====================================================
 # AI API INITIALIZATION LAYER (VERTEX AI COMPATIBLE)
 # =====================================================
+# =====================================================
+# AI API INITIALIZATION LAYER (VERTEX AI SPECIFIC FIXED)
+# =====================================================
 GEMINI_API_KEY = str(st.secrets.get("GEMINI_API_KEY", "")).strip()
 
 if not GEMINI_API_KEY or GEMINI_API_KEY == "None":
@@ -100,8 +103,8 @@ is_vertex = False
 if GEMINI_API_KEY:
     try:
         if GEMINI_API_KEY.startswith("AQ."):
-            # For GCP enterprise tokens, route via Vertex AI architecture
-            ai_client = genai.Client(vertex=True, credentials=GEMINI_API_KEY)
+            # Fixed keyword parameter string: vertexai=True
+            ai_client = genai.Client(vertexai=True, credentials=GEMINI_API_KEY)
             is_vertex = True
             st.sidebar.success("🤖 Vertex AI Engine Authenticated!")
         else:
