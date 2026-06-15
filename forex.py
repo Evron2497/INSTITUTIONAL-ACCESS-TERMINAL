@@ -487,13 +487,14 @@ def institutional_engine(df, pair):
     elif sweep_bsl or sweep_ssl: struct_str += "LIQUIDITY RUN DETECTED"
     else: struct_str += "ORDERFLOW EXPANSION"
 
-    # --- NEW CRITICAL EXECUTION TIMING MATRIX RULE ---
+    # --- TACTICAL EXECUTION TRIGGER TIMING RULES ---
+    current_time_str = datetime.now().strftime("%H:%M:%S")
     if "BUY" in signal:
-        execution_timing = "⏳ DO NOT BUY NOW. Wait for price to pull back down into the discount FVG / Order block zone before placing order limits."
+        execution_timing = f"🎯 EXECUTION NOW ELIGIBLE (Detected at {current_time_str} UTC). Strategy: Enter Limit Orders exclusively at structural Fair Value Gaps or discount Order Blocks. Do not chase market momentum."
     elif "SELL" in signal:
-        execution_timing = "⏳ DO NOT SELL NOW. Wait for price to rally back up into the premium FVG / Order block zone before placing order limits."
+        execution_timing = f"🎯 EXECUTION NOW ELIGIBLE (Detected at {current_time_str} UTC). Strategy: Enter Limit Orders exclusively at premium Fair Value Gaps or premium Order Blocks. Do not chase market momentum."
     else:
-        execution_timing = "⏸️ No institutional footprint ready. Standby."
+        execution_timing = "⏸️ Framework scanning. Matrix requirements unfulfilled."
 
     return {
         "signal": signal, "confidence": round(float(confidence), 1), "entry": round(entry, 5),
@@ -557,7 +558,7 @@ def render_live_dashboard(pair):
     st.plotly_chart(fig, use_container_width=True)
 
     # --- PRIORITY TIMING NOTICE BLOCK ---
-    if "STRONG" in result["signal"] or "BUY" in result["signal"] or "SELL" in signal:
+    if "STRONG" in result["signal"] or "BUY" in result["signal"] or "SELL" in result["signal"]:
         st.info(f"🚨 **TACTICAL TIMING GUIDELINE:** {result['execution_timing']}")
 
     st.markdown("### 🔍 Alpha Convergence Matrix Analysis")
