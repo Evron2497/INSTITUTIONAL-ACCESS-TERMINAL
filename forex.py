@@ -159,7 +159,7 @@ def run_cached_ai_analysis(res, pair):
         return f"❌ **AI Server Communication Exception**: {str(e)}"
 
 # =====================================================
-# LOGIN SYSTEM
+# PERSISTENT LOGIN MANAGEMENT (FIXED REFRESH LOOP)
 # =====================================================
 USERNAME = st.secrets.get("USERNAME", "")
 PASSWORD = st.secrets.get("PASSWORD", "")
@@ -172,13 +172,14 @@ if "shared_prediction" not in st.session_state:
         "signal": "NEUTRAL", "confidence": 0, "entry": 0, "tp": 0, "sl": 0,
         "pips": 0, "rsi": 50, "structure": "INITIALIZING", "buy_score": 0, "sell_score": 0,
         "session": "UNKNOWN", "timestamp": "", "recent_high": 0, "recent_low": 0,
-        "fvg_status": "NONE", "ob_status": "NONE", "pattern": "NONE", "divergence": "NONE"
+        "fvg_status": "NONE", "ob_status": "NONE", "pattern": "NONE", "divergence": "NONE",
+        "execution_timing": "AWAITING ENGINE SEED"
     }
 
 def login():
     st.markdown('<h2 class="terminal-header">🏦 Institutional Access Terminal</h2>', unsafe_allow_html=True)
-    u = st.text_input("Username")
-    p = st.text_input("Password", type="password")
+    u = st.text_input("Username", key="auth_user")
+    p = st.text_input("Password", type="password", key="auth_pass")
     if st.button("Login"):
         if u == USERNAME and p == PASSWORD:
             st.session_state.logged_in = True
@@ -186,11 +187,12 @@ def login():
         else:
             st.error("Invalid credentials")
 
+# Guard page layout initialization
 if not st.session_state.logged_in:
     login()
     st.stop()
 
-st.sidebar.success("✅ yFinance Engine Standby")
+st.sidebar.success("✅ Session Active (Password Bypassed)")
 
 # =====================================================
 # TELEGRAM DISPATCH PIPELINE
@@ -292,16 +294,8 @@ def calculate_pips(entry, tp, pair):
     else: pip_value = 0.0001
     return round(abs(tp - entry) / pip_value, 1)
 
-# =====================================================
-# UPGRADED HIGH PRECISE STRUCTURAL SIGNALS DETECTION
-# =====================================================
 def detect_ict_structural_shifts(df: pd.DataFrame, left=5, right=5):
-    """
-    Advanced pattern tracking mapping out true Liquidity Sweeps 
-    and proper validation of counter-trend Market Structure Shifts (MSS).
-    """
     df_pivots = calculate_swing_pivots(df, left_bars=left, right_bars=right)
-    
     highs_idx = df_pivots["Swing_High"].dropna().index
     lows_idx = df_pivots["Swing_Low"].dropna().index
     
@@ -318,23 +312,21 @@ def detect_ict_structural_shifts(df: pd.DataFrame, left=5, right=5):
         current_high = df_pivots["High"].iloc[-1]
         current_low = df_pivots["Low"].iloc[-1]
         
-        # --- 1. LIQUIDITY SWEEP PROTOCOLS (Wick hunt breaks outer bound, close inside) ---
         if current_high > last_sh and current_close < last_sh:
             sweep_bsl = True
         if current_low < last_sl and current_close > last_sl:
             sweep_ssl = True
             
-        # --- 2. STRUCTURAL BREAK SHIFTS WITH DISPLACEMENT (Body Close Requirement) ---
         if current_close > last_sh:
-            if last_sh < prev_sh:  # Valid Lower High broken = Trend Shift (MSS)
+            if last_sh < prev_sh:
                 mss_bullish = True
-            else:                  # Higher High broken = Trend Continuation (BOS)
+            else:
                 bos_bullish = True
                 
         if current_close < last_sl:
-            if last_sl > prev_sl:  # Valid Higher Low broken = Trend Shift (MSS)
+            if last_sl > prev_sl:
                 mss_bearish = True
-            else:                  # Lower Low broken = Trend Continuation (BOS)
+            else:
                 bos_bearish = True
 
     return mss_bullish, mss_bearish, bos_bullish, bos_bearish, sweep_bsl, sweep_ssl
@@ -401,7 +393,8 @@ def neutral_result():
         "signal": "NEUTRAL", "confidence": 0, "entry": 0, "tp": 0, "sl": 0,
         "pips": 0, "rsi": 50, "structure": "INSUFFICIENT DATA", "buy_score": 0,
         "sell_score": 0, "session": trading_session(), "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "recent_high": 0, "recent_low": 0, "fvg_status": "NONE", "ob_status": "NONE", "pattern": "NONE", "divergence": "NONE"
+        "recent_high": 0, "recent_low": 0, "fvg_status": "NONE", "ob_status": "NONE", "pattern": "NONE", "divergence": "NONE",
+        "execution_timing": "AWAITING ENGINE PARAMETERS"
     }
 
 # =====================================================
@@ -414,14 +407,12 @@ def institutional_engine(df, pair):
     pip_multiplier = 0.01 if "JPY" in pair.upper() else (0.10 if "XAU" in pair.upper() else 0.0001)
     atr_val = calculate_atr(df)
 
-    # --- RULE 1: Higher Timeframe Directional Matrix (M30 Control Filter) ---
     df_m30 = get_data_yf(pair, interval="30m", period="5d")
     htf_bias = "NEUTRAL"
     if df_m30 is not None and not df_m30.empty and len(df_m30) >= 30:
         m30_ema = df_m30["Close"].ewm(span=30).mean().iloc[-1]
         htf_bias = "BULLISH" if df_m30["Close"].iloc[-1] > m30_ema else "BEARISH"
 
-    # Framework Parameters Mapping
     df = calculate_swing_pivots(df, left_bars=5, right_bars=5)
     valid_highs = df["Swing_High"].dropna()
     valid_lows = df["Swing_Low"].dropna()
@@ -433,7 +424,6 @@ def institutional_engine(df, pair):
     is_in_discount = price < midpoint
     is_in_premium = price > midpoint
 
-    # Detect Component Layouts
     mss_bull, mss_bear, bos_bull, bos_bear, sweep_bsl, sweep_ssl = detect_ict_structural_shifts(df)
     fvg_buy, fvg_sell = detect_fvg(df)
     ob_bull, ob_bear = detect_order_block(df)
@@ -443,21 +433,17 @@ def institutional_engine(df, pair):
     buy_score = 0
     sell_score = 0
 
-    # --- RULE 2 & 3 SEQUENTIAL HIERARCHY VERIFICATION ---
-    # Trigger conditions for Longs: Liquidity must be swept OR structure must cleanly shift counter-trend
     if sweep_ssl or mss_bull:
         buy_score += 20 if htf_bias == "BULLISH" else 5
-        if mss_bull: buy_score += 35     # Structural Shift points weight allocation
-        if sweep_ssl: buy_score += 25    # Liquidity Sweep weight mapping
-        if bos_bull: buy_score += 10     # Secondary momentum continuation tracking
+        if mss_bull: buy_score += 35
+        if sweep_ssl: buy_score += 25
+        if bos_bull: buy_score += 10
         
-        # Premium/Discount Matrix Array Confluences (Only if initial conditions pass)
         if ob_bull: buy_score += 15
         if fvg_buy: buy_score += 15
         buy_score += amd_buy
         buy_score += div_buy
 
-    # Trigger conditions for Shorts: Buy-Side Liquidity swept OR Bearish MSS confirmed
     if sweep_bsl or mss_bear:
         sell_score += 20 if htf_bias == "BEARISH" else 5
         if mss_bear: sell_score += 35
@@ -469,9 +455,8 @@ def institutional_engine(df, pair):
         sell_score += amd_sell
         sell_score += div_sell
 
-    # --- RULE 4: Math Premium vs Discount Guardrail Execution ---
-    if not is_in_discount: buy_score = int(buy_score * 0.10)   # Violates rule -> Slashed down to max 10%
-    if not is_in_premium: sell_score = int(sell_score * 0.10) # Violates rule -> Slashed down to max 10%
+    if not is_in_discount: buy_score = int(buy_score * 0.10)
+    if not is_in_premium: sell_score = int(sell_score * 0.10)
 
     signal = "NEUTRAL"
     confidence = max(buy_score, sell_score)
@@ -485,7 +470,6 @@ def institutional_engine(df, pair):
     entry = price
     tp, sl = entry, entry
 
-    # Trade Execution Mapping Parameters
     if "BUY" in signal:
         tp = recent_high
         if (tp - entry) / pip_multiplier < 12.0: tp = entry + (15 * pip_multiplier)
@@ -503,6 +487,14 @@ def institutional_engine(df, pair):
     elif sweep_bsl or sweep_ssl: struct_str += "LIQUIDITY RUN DETECTED"
     else: struct_str += "ORDERFLOW EXPANSION"
 
+    # --- NEW CRITICAL EXECUTION TIMING MATRIX RULE ---
+    if "BUY" in signal:
+        execution_timing = "⏳ DO NOT BUY NOW. Wait for price to pull back down into the discount FVG / Order block zone before placing order limits."
+    elif "SELL" in signal:
+        execution_timing = "⏳ DO NOT SELL NOW. Wait for price to rally back up into the premium FVG / Order block zone before placing order limits."
+    else:
+        execution_timing = "⏸️ No institutional footprint ready. Standby."
+
     return {
         "signal": signal, "confidence": round(float(confidence), 1), "entry": round(entry, 5),
         "tp": round(tp, 5), "sl": round(sl, 5), "pips": round(pips, 1), "rsi": round(rsi_val, 1),
@@ -513,7 +505,8 @@ def institutional_engine(df, pair):
         "fvg_status": "BULLISH FVG" if fvg_buy else ("BEARISH FVG" if fvg_sell else "BALANCED"),
         "ob_status": "BULLISH OB" if ob_bull else ("BEARISH OB" if ob_bear else "NO TARGETS"),
         "pattern": "MSS DISPLACEMENT" if (mss_bull or mss_bear) else "CONSOLIDATION MAPPING",
-        "divergence": "BULLISH MOMENTUM DIV" if div_buy > 0 else ("BEARISH MOMENTUM DIV" if div_sell > 0 else "STABLE FLOW")
+        "divergence": "BULLISH MOMENTUM DIV" if div_buy > 0 else ("BEARISH MOMENTUM DIV" if div_sell > 0 else "STABLE FLOW"),
+        "execution_timing": execution_timing
     }
 
 # =====================================================
@@ -562,6 +555,10 @@ def render_live_dashboard(pair):
 
     fig.update_layout(title=f"🔥 LIVE {pair} (yFinance 15M Execution Matrix Map)", template="plotly_dark", height=450, xaxis_rangeslider_visible=False, uirevision="keep", margin=dict(l=10, r=10, t=40, b=10))
     st.plotly_chart(fig, use_container_width=True)
+
+    # --- PRIORITY TIMING NOTICE BLOCK ---
+    if "STRONG" in result["signal"] or "BUY" in result["signal"] or "SELL" in signal:
+        st.info(f"🚨 **TACTICAL TIMING GUIDELINE:** {result['execution_timing']}")
 
     st.markdown("### 🔍 Alpha Convergence Matrix Analysis")
     max_score = min(int(max(result["buy_score"], result["sell_score"])), 100)
@@ -635,8 +632,9 @@ VECTOR PAIR: {selected_pair}
 SIGNAL BIAS: <b>{current_result['signal']}</b>
 CONFIDENCE COEFFICIENT: {current_result['confidence']}%
 SMC STRUCTURE: {current_result['structure']}
+<b>EXECUTION TIMING: {current_result['execution_timing']}</b>
 
-ENTRY RATE: {current_result['entry']}
+ENTRY LIMIT LAYER: {current_result['entry']}
 TARGET PROFIT (TP): {current_result['tp']}
 STOP LOSS (SL): {current_result['sl']}
 
