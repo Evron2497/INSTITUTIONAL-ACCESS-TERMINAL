@@ -86,11 +86,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =====================================================
-# =====================================================
 # AI API INITIALIZATION LAYER (VERTEX AI COMPATIBLE)
-# =====================================================
-# =====================================================
-# AI API INITIALIZATION LAYER (VERTEX AI SPECIFIC FIXED)
 # =====================================================
 GEMINI_API_KEY = str(st.secrets.get("GEMINI_API_KEY", "")).strip()
 
@@ -103,12 +99,10 @@ is_vertex = False
 if GEMINI_API_KEY:
     try:
         if GEMINI_API_KEY.startswith("AQ."):
-            # Fixed keyword parameter string: vertexai=True
             ai_client = genai.Client(vertexai=True, credentials=GEMINI_API_KEY)
             is_vertex = True
             st.sidebar.success("🤖 Vertex AI Engine Authenticated!")
         else:
-            # For standard Developer keys (AIzaSy)
             ai_client = genai.Client(api_key=GEMINI_API_KEY)
             is_vertex = False
             st.sidebar.success("🤖 Google AI Studio Authenticated!")
@@ -119,7 +113,7 @@ else:
     st.sidebar.warning("⚠️ Waiting for a valid API Key entry in secrets...")
 
 # =====================================================
-# GOOGLE GEMINI AI CONTEXTUAL ANALYZER (ROUTING FIXED)
+# GOOGLE GEMINI AI CONTEXTUAL ANALYZER
 # =====================================================
 @st.cache_data(ttl=60)
 def run_cached_ai_analysis(res, pair):
@@ -145,7 +139,6 @@ def run_cached_ai_analysis(res, pair):
     Explicitly detail if any underlying technical discrepancies exist (e.g., trying to buy within a Premium pricing band or selling inside a Discount zone). Keep it punchy, aggressive, and highly readable.
     """
     try:
-        # Vertex AI uses 'gemini-1.5-flash-001', AI Studio uses 'gemini-1.5-flash'
         target_model = 'gemini-1.5-flash-001' if is_vertex else 'gemini-1.5-flash'
         
         response = ai_client.models.generate_content(
@@ -459,42 +452,6 @@ def run_scanner_yf(pairs_tuple):
         except Exception:
             scan_data.append([p, "ENGINE EXCEPTION", "—", "—", 0, "—"])
     return scan_data
-
-# =====================================================
-# GOOGLE GEMINI AI CONTEXTUAL ANALYZER (UPDATED SDK SYNTAX)
-# =====================================================
-@st.cache_data(ttl=60)
-def run_cached_ai_analysis(res, pair):
-    if not ai_client:
-        return "⚠️ **AI Engine Offline**: Initialize your setup keys by assigning a valid `GEMINI_API_KEY` token string inside the active environment secrets payload."
-
-    prompt = f"""
-    You are an expert institutional risk engineer and quant operator specializing in Inner Circle Trader (ICT) setups and Smart Money Concepts (SMC).
-    Run an advanced executive confluence risk validation sweep on the market telemetry parameters captured below for {pair}.
-    
-    Matrix Variables:
-    - Current Matrix Signal: {res['signal']}
-    - Engine Confidence Factor: {res['confidence']}%
-    - Multi-Timeframe Structural Bias: {res['structure']}
-    - Momentum RSI Scalar: {res['rsi']}
-    - Fair Value Gap Verification: {res['fvg_status']}
-    - System Order Block Allocation: {res['ob_status']}
-    - Session Pattern Recognition Strategy: {res['pattern']}
-    - Momentum Wick Divergence State: {res['divergence']}
-    - Active Macro Time Window: {res['session']}
-
-    Provide an elite, highly concise trading-desk layout analysis formatted strictly as 3 structural bullet points using professional quant terminology. 
-    Explicitly detail if any underlying technical discrepancies exist (e.g., trying to buy within a Premium pricing band or selling inside a Discount zone). Keep it punchy, aggressive, and highly readable.
-    """
-    try:
-        # Refactored pipeline using modern client.models namespace syntax
-        response = ai_client.models.generate_content(
-            model='gemini-1.5-flash',
-            contents=prompt,
-        )
-        return response.text
-    except Exception as e:
-        return f"❌ **AI Server Communication Exception**: {str(e)}"
 
 # =====================================================
 # LIVE DASHBOARD FRAGMENT LAYER 
