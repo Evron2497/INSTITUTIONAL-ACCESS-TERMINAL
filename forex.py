@@ -86,12 +86,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =====================================================
-# AI API INITIALIZATION LAYER (VERTEX AI COMPATIBLE)
+# =====================================================
+# AI API INITIALIZATION LAYER (PROJECT RESOLVED)
 # =====================================================
 GEMINI_API_KEY = str(st.secrets.get("GEMINI_API_KEY", "")).strip()
+GCP_PROJECT_ID = str(st.secrets.get("GCP_PROJECT_ID", "")).strip()
 
 if not GEMINI_API_KEY or GEMINI_API_KEY == "None":
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
+if not GCP_PROJECT_ID or GCP_PROJECT_ID == "None":
+    GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "")
 
 ai_client = None
 is_vertex = False
@@ -99,10 +104,16 @@ is_vertex = False
 if GEMINI_API_KEY:
     try:
         if GEMINI_API_KEY.startswith("AQ."):
-            ai_client = genai.Client(vertexai=True, credentials=GEMINI_API_KEY)
+            # Explicitly pass project to resolve Application Default Credentials error
+            ai_client = genai.Client(
+                vertexai=True, 
+                project=GCP_PROJECT_ID if GCP_PROJECT_ID else None,
+                credentials=GEMINI_API_KEY
+            )
             is_vertex = True
             st.sidebar.success("🤖 Vertex AI Engine Authenticated!")
         else:
+            # For standard Developer keys (AIzaSy)
             ai_client = genai.Client(api_key=GEMINI_API_KEY)
             is_vertex = False
             st.sidebar.success("🤖 Google AI Studio Authenticated!")
@@ -111,7 +122,6 @@ if GEMINI_API_KEY:
         ai_client = None
 else:
     st.sidebar.warning("⚠️ Waiting for a valid API Key entry in secrets...")
-
 # =====================================================
 # GOOGLE GEMINI AI CONTEXTUAL ANALYZER
 # =====================================================
