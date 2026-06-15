@@ -9,7 +9,12 @@ import streamlit as st
 import streamlit.components.v1 as components
 import plotly.graph_objects as go
 import yfinance as yf
-import google.generativeai as genai
+
+# =====================================================
+# MODERN GOOGLE AI MULTI-AUTH SDK UPGRADE
+# =====================================================
+from google import genai
+from google.genai import types
 
 # =====================================================
 # PAGE CONFIG & PREMIUM INSTITUTIONAL VISUAL THEME
@@ -81,37 +86,26 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =====================================================
-# AI API INITIALIZATION LAYER (GOOGLE AI STUDIO)
-# =====================================================
-# AI API INITIALIZATION LAYER (UNIVERSAL AUTH)
+# AI API INITIALIZATION LAYER (UNIVERSAL CLIENT STATE)
 # =====================================================
 GEMINI_API_KEY = str(st.secrets.get("GEMINI_API_KEY", "")).strip()
 
 if not GEMINI_API_KEY or GEMINI_API_KEY == "None":
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
+ai_client = None
+
 if GEMINI_API_KEY:
     try:
-        # If it's a GCP token (AQ.), we route it via alternative client options
-        if GEMINI_API_KEY.startswith("AQ."):
-            from google.api_core import client_options
-            from google.auth.credentials import AnonymousCredentials
-            
-            # This configures the library to accept the Google Cloud token stream
-            opts = client_options.ClientOptions(api_key=GEMINI_API_KEY)
-            genai.configure(client_options=opts)
-        else:
-            # Standard AI Studio key authentication (AIzaSy)
-            genai.configure(api_key=GEMINI_API_KEY)
-            
-        ai_model = genai.GenerativeModel('gemini-1.5-flash')
+        # The modern Client constructor handles both direct API keys and GCP service tokens natively
+        ai_client = genai.Client(api_key=GEMINI_API_KEY)
         st.sidebar.success("🤖 Institutional AI Engine Authenticated!")
     except Exception as e:
         st.sidebar.error(f"AI Init Error: {e}")
-        ai_model = None
+        ai_client = None
 else:
-    ai_model = None
     st.sidebar.warning("⚠️ Waiting for a valid API Key entry in secrets...")
+
 # =====================================================
 # LOGIN SYSTEM
 # =====================================================
@@ -169,7 +163,6 @@ def send_telegram(message: str):
 # =====================================================
 # YFINANCE SYMBOL MAPPING
 # =====================================================
-# yFinance uses distinct symbols for Forex (=X) and Gold (GC=F)
 pair_mapping = {
     "EURUSD": "EURUSD=X",
     "GBPUSD": "GBPUSD=X",
@@ -190,7 +183,6 @@ def get_data_yf(display_symbol, interval="15m", period="5d"):
         if df.empty:
             return pd.DataFrame()
         df = df.reset_index()
-        # Standardize headers to mirror old framework structures
         df.rename(columns={"Datetime": "time", "Date": "time", "Open": "Open", "High": "High", "Low": "Low", "Close": "Close", "Volume": "Volume"}, inplace=True)
         return df
     except Exception:
@@ -270,9 +262,6 @@ def detect_order_block(df):
                 ob_bear = True
     return ob_bull, ob_bear
 
-# =====================================================
-# ADVANCED STRATEGY: ICT AMD ENGINE (POWER OF THREE)
-# =====================================================
 def detect_amd_pattern(df):
     if len(df) < 40: return 0, 0
     range_window = df.tail(30)
@@ -290,9 +279,6 @@ def detect_amd_pattern(df):
     amd_sell = 30 if (is_accumulating and sweep_high) else 0
     return amd_buy, amd_sell
 
-# =====================================================
-# ADVANCED STRATEGY: STRUCTURAL RSI DIVERGENCE ENGINE
-# =====================================================
 def detect_rsi_divergence(df):
     if len(df) < 35: return 0, 0
     df_pivots = calculate_swing_pivots(df, left_bars=3, right_bars=3)
@@ -331,14 +317,12 @@ def institutional_engine(df, pair):
     pip_multiplier = 0.01 if "JPY" in pair.upper() else (0.10 if "XAU" in pair.upper() else 0.0001)
     atr_val = calculate_atr(df)
 
-    # 1. High Timeframe Trend Filter (30m alternative downloaded via yFinance context)
     df_m30 = get_data_yf(pair, interval="30m", period="5d")
     htf_bias = "NEUTRAL"
     if df_m30 is not None and not df_m30.empty and len(df_m30) >= 30:
         m30_ema = df_m30["Close"].ewm(span=30).mean().iloc[-1]
         htf_bias = "BULLISH" if df_m30["Close"].iloc[-1] > m30_ema else "BEARISH"
 
-    # 2. Key Swing Pivots & Premium/Discount Analysis
     df = calculate_swing_pivots(df, left_bars=5, right_bars=5)
     valid_highs = df["Swing_High"].dropna()
     valid_lows = df["Swing_Low"].dropna()
@@ -350,13 +334,11 @@ def institutional_engine(df, pair):
     is_in_discount = price < midpoint
     is_in_premium = price > midpoint
 
-    # 3. Dynamic Technical Sweeps & Internal Strategies
     fvg_buy, fvg_sell = detect_fvg(df)
     ob_bull, ob_bear = detect_order_block(df)
     amd_buy, amd_sell = detect_amd_pattern(df)
     div_buy, div_sell = detect_rsi_divergence(df)
 
-    # 4. Weight Matrix Scoring
     buy_score = 0
     sell_score = 0
 
@@ -371,11 +353,9 @@ def institutional_engine(df, pair):
     buy_score += div_buy
     sell_score += div_sell
 
-    # Structural Premium / Discount Mitigation Gatekeepers
     if not is_in_discount: buy_score = int(buy_score * 0.20)
     if not is_in_premium: sell_score = int(sell_score * 0.20)
 
-    # 5. Signal System Logic Execution
     signal = "NEUTRAL"
     confidence = max(buy_score, sell_score)
 
@@ -384,7 +364,6 @@ def institutional_engine(df, pair):
     if sell_score >= 70: signal = "STRONG SELL (A+ Setup)"
     elif sell_score >= 45 and "BUY" not in signal: signal = "SELL"
 
-    # 6. Trade Parameters Layout Configuration
     entry = price
     tp, sl = entry, entry
 
@@ -432,11 +411,11 @@ def run_scanner_yf(pairs_tuple):
     return scan_data
 
 # =====================================================
-# GOOGLE GEMINI AI CONTEXTUAL ANALYZER (WITH CACHING)
+# GOOGLE GEMINI AI CONTEXTUAL ANALYZER (UPDATED SDK SYNTAX)
 # =====================================================
 @st.cache_data(ttl=60)
 def run_cached_ai_analysis(res, pair):
-    if not ai_model:
+    if not ai_client:
         return "⚠️ **AI Engine Offline**: Initialize your setup keys by assigning a valid `GEMINI_API_KEY` token string inside the active environment secrets payload."
 
     prompt = f"""
@@ -458,7 +437,11 @@ def run_cached_ai_analysis(res, pair):
     Explicitly detail if any underlying technical discrepancies exist (e.g., trying to buy within a Premium pricing band or selling inside a Discount zone). Keep it punchy, aggressive, and highly readable.
     """
     try:
-        response = ai_model.generate_content(prompt)
+        # Refactored pipeline using modern client.models namespace syntax
+        response = ai_client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=prompt,
+        )
         return response.text
     except Exception as e:
         return f"❌ **AI Server Communication Exception**: {str(e)}"
@@ -476,7 +459,6 @@ def render_live_dashboard(pair):
     result = institutional_engine(market_data, pair)
     st.session_state.shared_prediction = result
 
-    # Candlestick Visualizations Matrix Map
     plot_df = calculate_swing_pivots(market_data, left_bars=5, right_bars=5)
     fig = go.Figure()
 
@@ -493,7 +475,6 @@ def render_live_dashboard(pair):
     fig.update_layout(title=f"🔥 LIVE {pair} (yFinance 15M Execution Matrix Map)", template="plotly_dark", height=450, xaxis_rangeslider_visible=False, uirevision="keep", margin=dict(l=10, r=10, t=40, b=10))
     st.plotly_chart(fig, use_container_width=True)
 
-    # Scoring Analytics Convergence Framework
     st.markdown("### 🔍 Alpha Convergence Matrix Analysis")
     max_score = min(int(max(result["buy_score"], result["sell_score"])), 100)
     st.progress(max_score / 100)
@@ -509,7 +490,6 @@ def render_live_dashboard(pair):
     c3.metric("Calculated Vector Range", f"{result['pips']} Pips")
     c4.metric("Active Session Window", result["session"])
 
-    # Core AI Analysis Box Interface Implementation
     st.markdown("### 🤖 Institutional AI Insight Matrix")
     ai_text_block = run_cached_ai_analysis(result, pair)
     st.markdown(f'<div class="ai-analysis-box">{ai_text_block}</div>', unsafe_allow_html=True)
