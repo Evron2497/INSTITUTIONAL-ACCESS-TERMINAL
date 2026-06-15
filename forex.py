@@ -171,8 +171,8 @@ def run_cached_ai_analysis(res, pair):
             model=target_model,
             contents=prompt,
         )
-        # Parse output safely and sanitize potential block ticks from model responses
-        clean_text = response.text.strip().replace("```json", "").replace("```", "")
+        clean_text = response.text.strip().replace("
+```json", "").replace("```", "")
         return json.loads(clean_text)
     except Exception as e:
         return {
@@ -181,11 +181,12 @@ def run_cached_ai_analysis(res, pair):
         }
 
 # =====================================================
-# PERSISTENT LOGIN MANAGEMENT (FIXED REFRESH LOOP)
+# VOLATILE LOGIN PROTOCOL (FORCED RESET ON REFRESH)
 # =====================================================
 USERNAME = st.secrets.get("USERNAME", "")
 PASSWORD = st.secrets.get("PASSWORD", "")
 
+# We track login state with custom tracking parameters that drop whenever the app refreshes
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
@@ -198,23 +199,31 @@ if "shared_prediction" not in st.session_state:
         "execution_timing": "AWAITING ENGINE SEED"
     }
 
-def login():
+# --- CRITICAL REFRESH CONTROL FIX ---
+# Instead of holding a permanent True status, we process submission inside an isolated structural guard.
+def render_login_form():
     st.markdown('<h2 class="terminal-header">🏦 Institutional Access Terminal</h2>', unsafe_allow_html=True)
-    u = st.text_input("Username", key="auth_user")
-    p = st.text_input("Password", type="password", key="auth_pass")
-    if st.button("Login"):
-        if u == USERNAME and p == PASSWORD:
-            st.session_state.logged_in = True
-            st.rerun()
-        else:
-            st.error("Invalid credentials")
+    with st.form("auth_form", clear_on_submit=True):
+        u = st.text_input("Username")
+        p = st.text_input("Password", type="password")
+        submit_btn = st.form_submit_button("Secure Login")
+        if submit_btn:
+            if u == USERNAME and p == PASSWORD:
+                st.session_state.logged_in = True
+                st.rerun()
+            else:
+                st.error("Invalid credentials configuration profile.")
 
-# Guard page layout initialization
 if not st.session_state.logged_in:
-    login()
+    render_login_form()
     st.stop()
 
-st.sidebar.success("✅ Session Active (Password Bypassed)")
+# Add a manual verification logout handle inside sidebar menu
+if st.sidebar.button("🔒 Structural Session Disconnect"):
+    st.session_state.logged_in = False
+    st.rerun()
+
+st.sidebar.success("✅ Session Volatile Active")
 
 # =====================================================
 # TELEGRAM DISPATCH PIPELINE
@@ -494,11 +503,13 @@ def institutional_engine(df, pair):
 
     if "BUY" in signal:
         tp = recent_high
-        if (tp - entry) / pip_multiplier < 12.0: tp = entry + (15 * pip_multiplier)
+        if (tp - entry) / pip_multiplier < 5.0: 
+            tp = entry + (5.0 * pip_multiplier)
         sl = recent_low - (atr_val * 0.5)
     elif "SELL" in signal:
         tp = recent_low
-        if (entry - tp) / pip_multiplier < 12.0: tp = entry - (15 * pip_multiplier)
+        if (entry - tp) / pip_multiplier < 5.0: 
+            tp = entry - (5.0 * pip_multiplier)
         sl = recent_high + (atr_val * 0.5)
 
     pips = calculate_pips(entry, tp, pair) if "NEUTRAL" not in signal else 0
@@ -509,7 +520,6 @@ def institutional_engine(df, pair):
     elif sweep_bsl or sweep_ssl: struct_str += "LIQUIDITY RUN DETECTED"
     else: struct_str += "ORDERFLOW EXPANSION"
 
-    # --- TACTICAL EXECUTION TRIGGER TIMING RULES ---
     current_time_str = datetime.now().strftime("%H:%M:%S")
     if "BUY" in signal:
         execution_timing = f"🎯 EXECUTION NOW ELIGIBLE (Detected at {current_time_str} UTC). Strategy: Enter Limit Orders exclusively at structural Fair Value Gaps or discount Order Blocks. Do not chase market momentum."
@@ -579,7 +589,6 @@ def render_live_dashboard(pair):
     fig.update_layout(title=f"🔥 LIVE {pair} (yFinance 15M Execution Matrix Map)", template="plotly_dark", height=450, xaxis_rangeslider_visible=False, uirevision="keep", margin=dict(l=10, r=10, t=40, b=10))
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- PRIORITY TIMING NOTICE BLOCK ---
     if "STRONG" in result["signal"] or "BUY" in result["signal"] or "SELL" in result["signal"]:
         st.info(f"🚨 **TACTICAL TIMING GUIDELINE:** {result['execution_timing']}")
 
@@ -598,13 +607,9 @@ def render_live_dashboard(pair):
     c3.metric("Calculated Vector Range", f"{result['pips']} Pips")
     c4.metric("Active Session Window", result["session"])
 
-    # =====================================================
-    # NEW: AI REGIME PREDICTION COMPONENT LAYER
-    # =====================================================
     st.markdown("### 🤖 Institutional AI Insight Matrix")
     ai_data = run_cached_ai_analysis(result, pair)
     
-    # Grid of structural engine inferences
     pred_col1, pred_col2, pred_col3 = st.columns(3)
     with pred_col1:
         st.markdown(f'<div class="prediction-card"><span style="color:#94A3B8;font-size:0.8rem;text-transform:uppercase;">Market Bias Regime</span><br><b style="color:#00F0FF;font-size:1.1rem;">{ai_data.get("regime_bias", "NEUTRAL")}</b></div>', unsafe_allow_html=True)
@@ -613,13 +618,12 @@ def render_live_dashboard(pair):
     with pred_col3:
         st.markdown(f'<div class="prediction-card"><span style="color:#94A3B8;font-size:0.8rem;text-transform:uppercase;">Trend Duration Horizon</span><br><b style="color:#10B981;font-size:1.1rem;">{ai_data.get("duration_horizon", "SHORT-TERM")}</b></div>', unsafe_allow_html=True)
 
-    # Contextual structured summary markdown narrative box
     st.markdown(f'<div class="ai-analysis-box"><h5 style="margin-top:0;color:#8B5CF6;letter-spacing:0.05em;">🏦 STRATEGIC CONFLUENCE ANALYSIS SUMMARY</h5>{ai_data.get("narrative", "")}</div>', unsafe_allow_html=True)
 
     with st.expander("Engine Log Buffer (JSON)"):
         st.json(result)
 
-    if "STRONG" in result["signal"] and result["pips"] >= 12.0:
+    if "STRONG" in result["signal"] and result["pips"] >= 5.0:
         audio_url = "[https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg](https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg)"
         components.html(f'<audio autoplay><source src="{audio_url}" type="audio/ogg"></audio>', height=0)
         st.toast(f"🚨 STRATEGIC ALGO DETECTED SETUP ON {pair}!", icon="💰")
