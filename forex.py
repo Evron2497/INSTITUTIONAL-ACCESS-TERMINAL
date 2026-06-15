@@ -83,27 +83,35 @@ st.markdown("""
 # =====================================================
 # AI API INITIALIZATION LAYER (GOOGLE AI STUDIO)
 # =====================================================
+# AI API INITIALIZATION LAYER (UNIVERSAL AUTH)
 # =====================================================
-# AI API INITIALIZATION LAYER (GOOGLE AI STUDIO)
-# =====================================================
-# Force it to read as a clean string and strip accidental whitespace
 GEMINI_API_KEY = str(st.secrets.get("GEMINI_API_KEY", "")).strip()
 
-# Fallback check: If Streamlit secrets fails, check environment variables
 if not GEMINI_API_KEY or GEMINI_API_KEY == "None":
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
-if GEMINI_API_KEY and GEMINI_API_KEY.startswith("AIzaSy"):
+if GEMINI_API_KEY:
     try:
-        genai.configure(api_key=GEMINI_API_KEY)
+        # If it's a GCP token (AQ.), we route it via alternative client options
+        if GEMINI_API_KEY.startswith("AQ."):
+            from google.api_core import client_options
+            from google.auth.credentials import AnonymousCredentials
+            
+            # This configures the library to accept the Google Cloud token stream
+            opts = client_options.ClientOptions(api_key=GEMINI_API_KEY)
+            genai.configure(client_options=opts)
+        else:
+            # Standard AI Studio key authentication (AIzaSy)
+            genai.configure(api_key=GEMINI_API_KEY)
+            
         ai_model = genai.GenerativeModel('gemini-1.5-flash')
+        st.sidebar.success("🤖 Institutional AI Engine Authenticated!")
     except Exception as e:
         st.sidebar.error(f"AI Init Error: {e}")
         ai_model = None
 else:
     ai_model = None
-    st.sidebar.warning("⚠️ Gemini API Key missing or invalid format (Should start with AIzaSy)")
-
+    st.sidebar.warning("⚠️ Waiting for a valid API Key entry in secrets...")
 # =====================================================
 # LOGIN SYSTEM
 # =====================================================
