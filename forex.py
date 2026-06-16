@@ -137,7 +137,7 @@ if "shared_prediction" not in st.session_state:
         "pips": 0, "rsi": 50, "structure": "INITIALIZING", "buy_score": 0, "sell_score": 0,
         "session": "UNKNOWN", "timestamp": "", "recent_high": 0, "recent_low": 0,
         "fvg_status": "NONE", "ob_status": "NONE", "pattern": "NONE", "divergence": "NONE",
-        "execution_timing": "AWAITING ENGINE SEED"
+        "execution_timing": "AWAITING ENGINE SEED", "eqh_status": "CLEAR", "eql_status": "CLEAR"
     }
 
 def render_login_form():
@@ -217,7 +217,7 @@ def get_data_yf(display_symbol, interval="15m", period="5d"):
         return pd.DataFrame()
 
 # =====================================================
-# PURE ALGORIHTMIC ICT ENGINE CALCULATIONS
+# ADVANCED SMC ANALYTICS ALGORITHMIC ENGINE
 # =====================================================
 def calculate_swing_pivots(df: pd.DataFrame, left_bars: int = 5, right_bars: int = 5) -> pd.DataFrame:
     df = df.copy().reset_index(drop=True)
@@ -235,6 +235,36 @@ def calculate_swing_pivots(df: pd.DataFrame, left_bars: int = 5, right_bars: int
     df["Swing_High"] = swing_high
     df["Swing_Low"]  = swing_low
     return df
+
+def calculate_mtf_levels(pair):
+    """Fetches higher timeframe (Daily) structural boundaries for key MTF confluence."""
+    yf_symbol = pair_mapping.get(pair, f"{pair}=X")
+    try:
+        df_daily = yf.Ticker(yf_symbol).history(period="1mo", interval="1d")
+        if df_daily.empty or len(df_daily) < 2:
+            return {"daily_high": 0, "daily_low": 0}
+        prev_day = df_daily.iloc[-2]
+        return {"daily_high": float(prev_day["High"]), "daily_low": float(prev_day["Low"])}
+    except Exception:
+        return {"daily_high": 0, "daily_low": 0}
+
+def detect_equal_high_low(df, threshold_pct=0.0004, bars_lookback=25):
+    """Tracks Relative Equal Highs/Lows (EQH/EQL) engineering institutional liquidity targets."""
+    df_pivots = calculate_swing_pivots(df, left_bars=3, right_bars=3)
+    sh_vals = df_pivots["Swing_High"].dropna().tail(3).values
+    sl_vals = df_pivots["Swing_Low"].dropna().tail(3).values
+    
+    eqh = False
+    eql = False
+    
+    if len(sh_vals) >= 2:
+        if abs(sh_vals[-1] - sh_vals[-2]) / sh_vals[-2] < threshold_pct:
+            eqh = True
+    if len(sl_vals) >= 2:
+        if abs(sl_vals[-1] - sl_vals[-2]) / sl_vals[-2] < threshold_pct:
+            eql = True
+            
+    return eqh, eql
 
 def calculate_atr(df, period=14):
     if len(df) < period: return 0.001
@@ -368,7 +398,7 @@ def neutral_result():
         "pips": 0, "rsi": 50, "structure": "INSUFFICIENT DATA", "buy_score": 0,
         "sell_score": 0, "session": trading_session(), "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "recent_high": 0, "recent_low": 0, "fvg_status": "NONE", "ob_status": "NONE", "pattern": "NONE", "divergence": "NONE",
-        "execution_timing": "AWAITING ENGINE PARAMETERS"
+        "execution_timing": "AWAITING ENGINE PARAMETERS", "eqh_status": "CLEAR", "eql_status": "CLEAR"
     }
 
 # =====================================================
@@ -398,6 +428,10 @@ def institutional_engine(df, pair):
     is_in_discount = price < midpoint
     is_in_premium = price > midpoint
 
+    # Advanced Multi-Timeframe and Engineered Liquidity Extraction
+    mtf_levels = calculate_mtf_levels(pair)
+    eqh_detected, eql_detected = detect_equal_high_low(df)
+
     mss_bull, mss_bear, bos_bull, bos_bear, sweep_bsl, sweep_ssl = detect_ict_structural_shifts(df)
     fvg_buy, fvg_sell = detect_fvg(df)
     ob_bull, ob_bear = detect_order_block(df)
@@ -412,9 +446,9 @@ def institutional_engine(df, pair):
         if mss_bull: buy_score += 35
         if sweep_ssl: buy_score += 25
         if bos_bull: buy_score += 10
-        
         if ob_bull: buy_score += 15
         if fvg_buy: buy_score += 15
+        if eql_detected: buy_score += 20  # Structural confluence: retail flat bottoms cleared
         buy_score += amd_buy
         buy_score += div_buy
 
@@ -423,12 +457,19 @@ def institutional_engine(df, pair):
         if mss_bear: sell_score += 35
         if sweep_bsl: sell_score += 25
         if bos_bear: sell_score += 10
-        
         if ob_bear: sell_score += 15
         if fvg_sell: sell_score += 15
+        if eqh_detected: sell_score += 20  # Structural confluence: retail flat tops cleared
         sell_score += amd_sell
         sell_score += div_sell
 
+    # High Timeframe Daily Target Intersections
+    if mtf_levels["daily_high"] > 0 and price >= mtf_levels["daily_high"] and sweep_bsl:
+        sell_score += 25
+    if mtf_levels["daily_low"] > 0 and price <= mtf_levels["daily_low"] and sweep_ssl:
+        buy_score += 25
+
+    # Premium vs Discount Execution Filter Matrices
     if not is_in_discount: buy_score = int(buy_score * 0.10)
     if not is_in_premium: sell_score = int(sell_score * 0.10)
 
@@ -482,7 +523,9 @@ def institutional_engine(df, pair):
         "ob_status": "BULLISH OB" if ob_bull else ("BEARISH OB" if ob_bear else "NO TARGETS"),
         "pattern": "MSS DISPLACEMENT" if (mss_bull or mss_bear) else "CONSOLIDATION MAPPING",
         "divergence": "BULLISH MOMENTUM DIV" if div_buy > 0 else ("BEARISH MOMENTUM DIV" if div_sell > 0 else "STABLE FLOW"),
-        "execution_timing": execution_timing
+        "execution_timing": execution_timing,
+        "eqh_status": "ENG_TARGET_EQH" if eqh_detected else "CLEAR",
+        "eql_status": "ENG_TARGET_EQL" if eql_detected else "CLEAR"
     }
 
 # =====================================================
@@ -548,11 +591,18 @@ def render_live_dashboard(pair):
     fig.add_trace(go.Scatter(x=plot_df["time"], y=plot_df["Swing_High"], mode="markers", name="Buy-Side Liquidity (BSL)", marker=dict(color="#FF4B4B", size=7, symbol="triangle-down")))
     fig.add_trace(go.Scatter(x=plot_df["time"], y=plot_df["Swing_Low"], mode="markers", name="Sell-Side Liquidity (SSL)", marker=dict(color="#00F0FF", size=7, symbol="triangle-up")))
 
+    # Structural Range Tools
     if result["recent_high"] > 0:
         fig.add_hline(y=result["recent_high"], line_dash="dash", line_color="rgba(255,75,75,0.4)", annotation_text="BSL Pool")
         fig.add_hline(y=result["recent_low"],  line_dash="dash", line_color="rgba(0,240,255,0.4)", annotation_text="SSL Pool")
         eq = result["recent_low"] + ((result["recent_high"] - result["recent_low"]) * 0.50)
         fig.add_hline(y=eq, line_dash="dot", line_color="rgba(255,255,0,0.4)", annotation_text="Equilibrium (50%)")
+
+    # MTF High Timeframe Mapping Overlay
+    mtf_boundaries = calculate_mtf_levels(pair)
+    if mtf_boundaries["daily_high"] > 0:
+        fig.add_hline(y=mtf_boundaries["daily_high"], line_color="#EF4444", line_dash="solid", annotation_text="PDH Support/Resistance Pool")
+        fig.add_hline(y=mtf_boundaries["daily_low"], line_color="#10B981", line_dash="solid", annotation_text="PDL Support/Resistance Pool")
 
     fig.update_layout(
         template="plotly_dark", 
@@ -567,6 +617,12 @@ def render_live_dashboard(pair):
 
     if "STRONG" in result["signal"] or "BUY" in result["signal"] or "SELL" in result["signal"]:
         st.info(f"🚨 **TACTICAL TIMING GUIDELINE:** {result['execution_timing']}")
+
+    # Side-panel telemetry warnings for equal formations
+    if result["eqh_status"] == "ENG_TARGET_EQH":
+        st.sidebar.warning("⚠️ ENGINE TARGET: EQH RESISTANCE DETECTED (LIQUIDITY POOL)")
+    if result["eql_status"] == "ENG_TARGET_EQL":
+        st.sidebar.warning("⚠️ ENGINE TARGET: EQL SUPPORT DETECTED (LIQUIDITY POOL)")
 
     # Quantitative score distribution slider mapping
     st.markdown("#### 🔍 Structural Orderflow Distribution Index")
@@ -660,26 +716,21 @@ with col_layout_right:
             else:
                 message = f"""🏦 <b>TECH-STAR QUALIFIED ALGO SIGNAL</b>
 
-VECTOR PAIR: {selected_pair}
+VECTOR PAIR: <code>{selected_pair}</code>
 SIGNAL BIAS: <b>{current_result['signal']}</b>
-CONFIDENCE COEFFICIENT: {current_result['confidence']}%
-SMC STRUCTURE: {current_result['structure']}
-<b>EXECUTION TIMING: {current_result['execution_timing']}</b>
+CONFIDENCE COEFFICIENT: <code>{current_result['confidence']}%</code>
+SMC STRUCTURE FLOW: {current_result['structure']}
 
-ENTRY LIMIT LAYER: {current_result['entry']}
-TARGET PROFIT (TP): {current_result['tp']}
-STOP LOSS (SL): {current_result['sl']}
+🎯 <b>STRUCTURAL EXECUTION BOUNDARIES:</b>
+• Matrix Entry Point: {current_result['entry']}
+• Take Profit Target: {current_result['tp']}
+• Stop Loss Boundary: {current_result['sl']}
+• Target Yield Forecast: {current_result['pips']} Pips
 
-📊 EXPECTED RANGE YIELD: <b>{current_result['pips']} Pips</b>
-Ceiling Liquidity Line: {current_result['recent_high']}
-Floor Liquidity Line: {current_result['recent_low']}
-
-RSI SCALAR: {current_result['rsi']}
-TEMPORAL SESSION: {current_result['session']}
-SYSTEM TIME STAMP: {current_result['timestamp']}
-"""
-                ok, err = send_telegram(message)
-                if ok:
-                    st.success("✅ Broadcast vectors systematically deployed to Telegram channels.")
+🕒 <i>Transmission Frame: {current_result['timestamp']} UTC</i>"""
+                
+                success, err_msg = send_telegram(message)
+                if success:
+                    st.toast("Payload broadcast complete across network arrays!", icon="🚀")
                 else:
-                    st.error(f"❌ Distribution execution exception: {err}")
+                    st.error(f"Transmission Failed: {err_msg}")
