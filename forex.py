@@ -16,7 +16,7 @@ st.set_page_config(page_title="CORE VECTOR MATRIX - GOLD EXCLUSIVE", page_icon="
 
 st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght=300;400;500;600&family=Space+Grotesk:wght=300;400;500;600;700&display=swap');
         
         html, body, [data-testid="stAppViewContainer"] {
             background-color: #060913 !important;
@@ -65,6 +65,7 @@ st.markdown("""
             background: linear-gradient(135deg, rgba(15, 23, 42, 0.8) 0%, rgba(112, 0, 255, 0.15) 100%) !important;
             box-shadow: 0px 0px 25px rgba(168, 85, 247, 0.25) !important;
         }
+        .matrix-card.buy { border-left: 4px solid #10B981 !important; }
         .matrix-card.sell { border-left: 4px solid #FF4B4B !important; }
         .matrix-card.neutral { border-left: 4px solid #64748B !important; }
 
@@ -129,7 +130,7 @@ if "shared_prediction" not in st.session_state:
         "signal": "NEUTRAL", "confidence": 0, "entry": 0, "tp": 0, "sl": 0, "pips": 0, "rsi": 50,
         "structure": "INITIALIZING", "buy_score": 0, "sell_score": 0, "session": "UNKNOWN",
         "timestamp": "", "recent_high": 0, "recent_low": 0, "fvg_status": "NONE", "ob_status": "NONE",
-        "is_scalping": False, "scalping_state": "STANDBY", "conditions_passed": 0
+        "is_scalping": False, "scalping_state": "STANDBY", "conditions_passed": 0, "direction": "NEUTRAL", "checks": []
     }
 
 if "eqh_detected" not in st.session_state: st.session_state.eqh_detected = False
@@ -185,7 +186,6 @@ GOLD_SYMBOL = "XAUUSD"
 GOLD_YF_TICKER = "GC=F"
 
 st.sidebar.subheader("🎛️ Terminal Controls")
-# Hardcoded timeframe optimized parameters for Gold Scalping
 selected_tf = st.sidebar.selectbox("Gold Scalping Matrix Interval", ["1m", "5m", "15m"], index=1)
 
 @st.cache_data(ttl=2)
@@ -238,26 +238,23 @@ def trading_session():
 def evaluate_scalping_matrix(df):
     """
     Implements Safe-Scalper-Pro breakout logic fine-tuned for XAU/USD.
-    Requires 7 precision checkpoints tailored to short-interval gold volatility.
+    Guarantees consistent matrix state delivery without dropping direction indicators.
     """
-    if len(df) < 200: return {"is_scalping": False, "state": "INSUFFICIENT BUFFER", "passed": 0, "direction": "NONE"}
+    if len(df) < 200: return {"is_scalping": False, "state": "INSUFFICIENT BUFFER", "passed": 0, "direction": "NEUTRAL", "checks": []}
     
     close, high, low = df["Close"].iloc[-1], df["High"].iloc[-1], df["Low"].iloc[-1]
     prev_close = df["Close"].iloc[-2]
     atr = calculate_atr(df)
     
-    # Gold-optimized short/long term structural EMAs
     ema_fast = df["Close"].ewm(span=50, adjust=False).mean().iloc[-1]
     ema_slow = df["Close"].ewm(span=200, adjust=False).mean().iloc[-1]
     
-    # N-Bar breakout values (Reduced window for agile scalping executions)
     n_bar_window = df.tail(12)
     n_bar_high = n_bar_window["High"].max()
     n_bar_low = n_bar_window["Low"].min()
     
     rsi_val = rsi_series(df).iloc[-1]
     
-    # Multi-Timeframe Trend filter tracking 1-Hour structures
     df_h1 = get_data_yf_gold(interval="1h", period="5d")
     h1_agreement = True
     if not df_h1.empty and len(df_h1) >= 50:
@@ -265,35 +262,55 @@ def evaluate_scalping_matrix(df):
         h1_ema50 = df_h1["Close"].ewm(span=50, adjust=False).mean().iloc[-1]
         h1_agreement = (h1_ema20 > h1_ema50)
     
-    # 7 Checkpoint Gold Scalper Matrix Validation
+    labels = [
+        "Micro-Trend Direction (EMA50 vs EMA200)",
+        "Breakout Velocity (Price separation from EMA50)",
+        "Structural Alignment (Trading clear of EMAs)",
+        "Immediate N-Bar Range High/Low Breakout",
+        "RSI Momentum Optimization Envelope",
+        "Immediate Bar Acceleration Trigger",
+        "Macro HTF Trend Filter Agreement (1H)"
+    ]
+    
     cond_buy = [
-        ema_fast > ema_slow,                                # 1. Micro Trend direction aligned
-        (close - ema_fast) > (atr * 0.2),                   # 2. Strong breakout velocity above ema
-        close > ema_fast and close > ema_slow,              # 3. Structural price alignment
-        close >= (n_bar_high - (atr * 0.05)),                # 4. Immediate high threshold breakout
-        45 <= rsi_val <= 68,                                # 5. RSI indicates bullish momentum without complete overbought fatigue
-        close > prev_close,                                 # 6. Immediate directional bar acceleration
-        h1_agreement                                        # 7. Higher Timeframe macro directional filter
+        ema_fast > ema_slow,
+        (close - ema_fast) > (atr * 0.2),
+        close > ema_fast and close > ema_slow,
+        close >= (n_bar_high - (atr * 0.05)),
+        45 <= rsi_val <= 68,
+        close > prev_close,
+        h1_agreement
     ]
     
     cond_sell = [
-        ema_fast < ema_slow,                                # 1. Micro Trend direction aligned
-        (ema_fast - close) > (atr * 0.2),                   # 2. Strong breakout velocity below ema
-        close < ema_fast and close < ema_slow,              # 3. Structural price alignment
-        close <= (n_bar_low + (atr * 0.05)),                 # 4. Immediate low threshold breakout
-        32 <= rsi_val <= 55,                                # 5. RSI indicates bearish momentum without complete oversold fatigue
-        close < prev_close,                                 # 6. Immediate directional bar acceleration
-        not h1_agreement                                    # 7. Higher Timeframe macro directional filter
+        ema_fast < ema_slow,
+        (ema_fast - close) > (atr * 0.2),
+        close < ema_fast and close < ema_slow,
+        close <= (n_bar_low + (atr * 0.05)),
+        32 <= rsi_val <= 55,
+        close < prev_close,
+        not h1_agreement
     ]
     
     passed_buy = sum(1 for c in cond_buy if c)
     passed_sell = sum(1 for c in cond_sell if c)
     
-    if passed_buy == 7: return {"is_scalping": True, "state": "🔥 GOLD BUY SCALP CONFIRMED", "passed": 7, "direction": "BUY"}
-    if passed_sell == 7: return {"is_scalping": True, "state": "🔥 GOLD SELL SCALP CONFIRMED", "passed": 7, "direction": "SELL"}
+    # Track metrics relative to structural dominance
+    if passed_buy >= passed_sell:
+        active_direction = "BUY"
+        max_passed = passed_buy
+        checks_status = [{"label": labels[i], "passed": cond_buy[i]} for i in range(7)]
+    else:
+        active_direction = "SELL"
+        max_passed = passed_sell
+        checks_status = [{"label": labels[i], "passed": cond_sell[i]} for i in range(7)]
+
+    if passed_buy == 7: 
+        return {"is_scalping": True, "state": "🔥 GOLD BUY SCALP CONFIRMED", "passed": 7, "direction": "BUY", "checks": checks_status}
+    if passed_sell == 7: 
+        return {"is_scalping": True, "state": "🔥 GOLD SELL SCALP CONFIRMED", "passed": 7, "direction": "SELL", "checks": checks_status}
     
-    max_passed = max(passed_buy, passed_sell)
-    return {"is_scalping": False, "state": f"STANDBY ({max_passed}/7 Gold Elements Synchronized)", "passed": max_passed, "direction": "NONE"}
+    return {"is_scalping": False, "state": f"STANDBY ({max_passed}/7 Elements Synchronized)", "passed": max_passed, "direction": active_direction, "checks": checks_status}
 
 # =====================================================
 # INTEGRATED QUANTITATIVE SMC CORE SYSTEM
@@ -304,21 +321,19 @@ def institutional_engine(df):
             "signal": "NEUTRAL", "confidence": 0, "entry": 0, "tp": 0, "sl": 0, "pips": 0, "rsi": 50,
             "structure": "INSUFFICIENT DATA", "buy_score": 0, "sell_score": 0, "session": trading_session(),
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "recent_high": 0, "recent_low": 0,
-            "fvg_status": "NONE", "ob_status": "NONE", "is_scalping": False, "scalping_state": "STANDBY", "conditions_passed": 0
+            "fvg_status": "NONE", "ob_status": "NONE", "is_scalping": False, "scalping_state": "STANDBY", 
+            "conditions_passed": 0, "direction": "NEUTRAL", "checks": []
         }
 
-    # Gold Standard pip configurations (0.1 points = 1 pip)
     pip_multiplier = 0.10 
     atr_val = calculate_atr(df)
     rsi_val = round(float(rsi_series(df).iloc[-1]), 1)
 
-    # Swing levels processing
     df_pivots = calculate_swing_pivots(df)
     v_highs, v_lows = df_pivots["Swing_High"].dropna(), df_pivots["Swing_Low"].dropna()
     recent_high = float(v_highs.iloc[-1]) if not v_highs.empty else float(df["High"].max())
     recent_low = float(v_lows.iloc[-1]) if not v_lows.empty else float(df["Low"].min())
     
-    # Process specialized core matrix
     scalping_profile = evaluate_scalping_matrix(df)
 
     buy_score = 15 if scalping_profile["direction"] == "BUY" else 0
@@ -327,7 +342,6 @@ def institutional_engine(df):
     sell_score += (scalping_profile["passed"] * 12) if scalping_profile["direction"] == "SELL" else (scalping_profile["passed"] * 2)
 
     price = float(df["Close"].iloc[-1])
-    signal = "NEUTRAL"
     
     if scalping_profile["is_scalping"]:
         signal = f"SCALPING {scalping_profile['direction']}"
@@ -336,16 +350,21 @@ def institutional_engine(df):
         confidence = max(buy_score, sell_score)
         if buy_score > 55: signal = "BULLISH SCALP BIAS"
         elif sell_score > 55: signal = "BEARISH SCALP BIAS"
+        else: signal = "NEUTRAL"
 
     entry = price
     
-    # Hyper-precision gold scalping take profit and risk metrics
-    # Scalping targets are based on technical ATR configurations to manage slippage
-    tp_distance = max((atr_val * 1.5), 1.5)  # Points distance
-    sl_distance = max((atr_val * 1.0), 1.0)  # Points distance
+    tp_distance = max((atr_val * 1.5), 1.5)
+    sl_distance = max((atr_val * 1.0), 1.0)
 
-    tp = entry + tp_distance if "BUY" in signal else entry - tp_distance
-    sl = entry - sl_distance if "BUY" in signal else entry + sl_distance
+    # Use pure trend validation vector directions to eliminate inverse calculation dropouts
+    if scalping_profile["direction"] == "BUY":
+        tp = entry + tp_distance
+        sl = entry - sl_distance
+    else:
+        tp = entry - tp_distance
+        sl = entry + sl_distance
+        
     pips = round(abs(tp - entry) / pip_multiplier, 1)
 
     return {
@@ -358,7 +377,9 @@ def institutional_engine(df):
         "fvg_status": "MONITORING SCALP", "ob_status": "DYNAMIC",
         "is_scalping": scalping_profile["is_scalping"],
         "scalping_state": scalping_profile["state"],
-        "conditions_passed": scalping_profile["passed"]
+        "conditions_passed": scalping_profile["passed"],
+        "direction": scalping_profile["direction"],
+        "checks": scalping_profile["checks"]
     }
 
 # =====================================================
@@ -376,8 +397,8 @@ def render_live_dashboard(tf):
 
     card_style = "neutral"
     if result["is_scalping"]: card_style = "scalping"
-    elif "BUY" in result["signal"]: card_style = "buy"
-    elif "SELL" in result["signal"]: card_style = "sell"
+    elif "BULLISH" in result["signal"] or result["direction"] == "BUY": card_style = "buy"
+    elif "BEARISH" in result["signal"] or result["direction"] == "SELL": card_style = "sell"
     
     st.markdown(f"""
     <div class="matrix-card {card_style}">
@@ -396,6 +417,16 @@ def render_live_dashboard(tf):
         st.markdown(f'<div class="metric-glow-box"><div class="metric-glow-label">RSI Dynamics</div><div class="metric-glow-val">{result["rsi"]}</div></div>', unsafe_allow_html=True)
     with m_col4:
         st.markdown(f'<div class="metric-glow-box"><div class="metric-glow-label">Active Horizon</div><div class="metric-glow-val" style="font-size:0.95rem; line-height:2.2rem; color:#FFA500;">{result["session"].split(" ")[0]}</div></div>', unsafe_allow_html=True)
+
+    # Live Core Signal Checkpoints Rendering Array
+    with st.sidebar.expander("🔍 LIVE SIGNAL MATRIX CHECKPOINTS", expanded=True):
+        color_map = {"BUY": "#10B981", "SELL": "#FF4B4B", "NEUTRAL": "#64748B"}
+        st.markdown(f"**Structural Focus Bias:** <span style='color:{color_map.get(result['direction'], '#FFF')}; font-weight:bold;'>{result['direction']}</span>", unsafe_allow_html=True)
+        st.markdown("---")
+        for check in result.get('checks', []):
+            icon = "✅" if check["passed"] else "❌"
+            color = "#10B981" if check["passed"] else "#EF4444"
+            st.markdown(f"<span style='color:{color}; font-size:0.85rem; font-family:\"JetBrains Mono\";'>{icon} {check['label']}</span>", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
