@@ -117,14 +117,17 @@ st.markdown("""
  """, unsafe_allow_html=True)
 
 # =====================================================
-# PERSISTENT LOCAL STORAGE SECURITY SYSTEM
+# STABLE NATIVE URL PARSING REFRESH GUARDIAN
 # =====================================================
 USERNAME = st.secrets.get("USERNAME", "")
 PASSWORD = st.secrets.get("PASSWORD", "")
 
-# Initialize fallbacks in state memory
+# Instantly read parameters directly via Streamlit engine (safe from websocket desync errors)
 if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
+    if "session_node" in st.query_params and st.query_params["session_node"] == "active":
+        st.session_state.logged_in = True
+    else:
+        st.session_state.logged_in = False
 
 if "shared_prediction" not in st.session_state:
      st.session_state.shared_prediction = {
@@ -134,37 +137,6 @@ if "shared_prediction" not in st.session_state:
          "is_scalping": False, "scalping_state": "STANDBY", "conditions_passed": 0, "direction": "NEUTRAL", "checks": [],
          "trailing_sl": 0.0, "protection_status": "PASSING"
      }
-
-# Invisible HTML/JS Component to handle cross-refresh browser caching
-def local_storage_manager(action="get", data=""):
-    html_code = f"""
-    <script>
-    const KEY = "core_matrix_auth_token";
-    const parent = window.parent;
-    
-    if ("{action}" === "set") {{
-        localStorage.setItem(KEY, "{data}");
-        parent.postMessage({{type: "LOCAL_STORAGE_VAL", val: "{data}"}}, "*");
-    }} else if ("{action}" === "clear") {{
-        localStorage.removeItem(KEY);
-        parent.postMessage({{type: "LOCAL_STORAGE_VAL", val: "CLEAR"}}, "*");
-    }} else if ("{action}" === "get") {{
-        const val = localStorage.getItem(KEY) || "EMPTY";
-        parent.postMessage({{type: "LOCAL_STORAGE_VAL", val: val}}, "*");
-    }}
-    </script>
-    """
-    components.html(html_code, height=0, width=0)
-
-# Listen for structural tokens passed from the web client container window
-if not st.session_state.logged_in:
-    local_storage_manager(action="get")
-    
-    # Process experimental query parameter tricks or message catches
-    # To catch immediate client frame updates cleanly we check if a payload marker exists
-    q_params = st.query_params
-    if q_params.get("session_node") == "validated":
-        st.session_state.logged_in = True
 
 def render_login_form():
      st.markdown('<div style="max-width:450px; margin: 80px auto 0 auto;">', unsafe_allow_html=True)
@@ -179,9 +151,8 @@ def render_login_form():
          if submit:
              if u == USERNAME and p == PASSWORD:
                  st.session_state.logged_in = True
-                 # Inject persistent cache values directly into browser environment memory
-                 local_storage_manager(action="set", data="validated")
-                 st.query_params["session_node"] = "validated"
+                 # Write token natively using Streamlit engine API parameters safely
+                 st.query_params["session_node"] = "active"
                  st.rerun()
              else:
                  st.error("Invalid node validation configuration profile.")
@@ -194,10 +165,9 @@ if not st.session_state.logged_in:
 if st.sidebar.button("🔒 Terminal Session Disconnect"):
      st.session_state.logged_in = False
      st.query_params.clear()
-     local_storage_manager(action="clear")
      st.rerun()
 
-st.sidebar.markdown('<div style="padding: 2px 10px; background: rgba(16,185,129,0.1); border: 1px solid #10B981; border-radius:6px; color:#10B981; font-size:0.8rem; font-family:\'JetBrains Mono\'; text-align:center;">● REFRESH PERSISTENCE SECURED</div>', unsafe_allow_html=True)
+st.sidebar.markdown('<div style="padding: 2px 10px; background: rgba(16,185,129,0.1); border: 1px solid #10B981; border-radius:6px; color:#10B981; font-size:0.8rem; font-family:\'JetBrains Mono\'; text-align:center;">● REFRESH IMMUNITY ACTIVE</div>', unsafe_allow_html=True)
 st.sidebar.markdown("---")
 
 # =====================================================
