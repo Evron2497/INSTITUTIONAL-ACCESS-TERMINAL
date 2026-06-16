@@ -140,6 +140,11 @@ if "shared_prediction" not in st.session_state:
         "execution_timing": "AWAITING ENGINE SEED", "eqh_status": "CLEAR", "eql_status": "CLEAR"
     }
 
+if "eqh_detected" not in st.session_state:
+    st.session_state.eqh_detected = False
+if "eql_detected" not in st.session_state:
+    st.session_state.eql_detected = False
+
 def render_login_form():
     st.markdown('<div style="max-width:450px; margin: 80px auto 0 auto;">', unsafe_allow_html=True)
     st.markdown('<h2 class="main-title" style="text-align:center;">CORE MATRIX LOGIN</h2>', unsafe_allow_html=True)
@@ -237,7 +242,7 @@ def calculate_swing_pivots(df: pd.DataFrame, left_bars: int = 5, right_bars: int
     return df
 
 def calculate_mtf_levels(pair):
-    """Fetches higher timeframe (Daily) structural boundaries for key MTF confluence."""
+    """Fetches daily timeframes to map major Support/Resistance lines."""
     yf_symbol = pair_mapping.get(pair, f"{pair}=X")
     try:
         df_daily = yf.Ticker(yf_symbol).history(period="1mo", interval="1d")
@@ -249,7 +254,7 @@ def calculate_mtf_levels(pair):
         return {"daily_high": 0, "daily_low": 0}
 
 def detect_equal_high_low(df, threshold_pct=0.0004, bars_lookback=25):
-    """Tracks Relative Equal Highs/Lows (EQH/EQL) engineering institutional liquidity targets."""
+    """Identifies Relative Equal Highs/Lows (EQH/EQL) for engineering pools."""
     df_pivots = calculate_swing_pivots(df, left_bars=3, right_bars=3)
     sh_vals = df_pivots["Swing_High"].dropna().tail(3).values
     sl_vals = df_pivots["Swing_Low"].dropna().tail(3).values
@@ -402,7 +407,7 @@ def neutral_result():
     }
 
 # =====================================================
-# UPGRADED SEQUENTIAL CONFLUENCE TRADING ORDER ENGINE
+# INTEGRATED QUANTITATIVE SMC FLOW ENGINE
 # =====================================================
 def institutional_engine(df, pair):
     if df is None or df.empty or len(df) < 50:
@@ -428,7 +433,7 @@ def institutional_engine(df, pair):
     is_in_discount = price < midpoint
     is_in_premium = price > midpoint
 
-    # Advanced Multi-Timeframe and Engineered Liquidity Extraction
+    # Fetch Upgraded MT5 Analytics Components
     mtf_levels = calculate_mtf_levels(pair)
     eqh_detected, eql_detected = detect_equal_high_low(df)
 
@@ -448,7 +453,7 @@ def institutional_engine(df, pair):
         if bos_bull: buy_score += 10
         if ob_bull: buy_score += 15
         if fvg_buy: buy_score += 15
-        if eql_detected: buy_score += 20  # Structural confluence: retail flat bottoms cleared
+        if eql_detected: buy_score += 20  
         buy_score += amd_buy
         buy_score += div_buy
 
@@ -459,17 +464,17 @@ def institutional_engine(df, pair):
         if bos_bear: sell_score += 10
         if ob_bear: sell_score += 15
         if fvg_sell: sell_score += 15
-        if eqh_detected: sell_score += 20  # Structural confluence: retail flat tops cleared
+        if eqh_detected: sell_score += 20  
         sell_score += amd_sell
         sell_score += div_sell
 
-    # High Timeframe Daily Target Intersections
+    # Confluence targeting via MTF Daily Extremes
     if mtf_levels["daily_high"] > 0 and price >= mtf_levels["daily_high"] and sweep_bsl:
         sell_score += 25
     if mtf_levels["daily_low"] > 0 and price <= mtf_levels["daily_low"] and sweep_ssl:
         buy_score += 25
 
-    # Premium vs Discount Execution Filter Matrices
+    # Core execution thresholds (Premium/Discount validation matrix)
     if not is_in_discount: buy_score = int(buy_score * 0.10)
     if not is_in_premium: sell_score = int(sell_score * 0.10)
 
@@ -559,6 +564,10 @@ def render_live_dashboard(pair):
     result = institutional_engine(market_data, pair)
     st.session_state.shared_prediction = result
 
+    # Offload structural warnings safely to global state to protect DOM delta rendering
+    st.session_state.eqh_detected = (result["eqh_status"] == "ENG_TARGET_EQH")
+    st.session_state.eql_detected = (result["eql_status"] == "ENG_TARGET_EQL")
+
     # Display Dynamic Header Panel based on Signal
     card_type = "neutral"
     if "BUY" in result["signal"]: card_type = "buy"
@@ -571,7 +580,7 @@ def render_live_dashboard(pair):
     </div>
     """, unsafe_allow_html=True)
 
-    # 4-Column Glossy Metric Bar
+    # 4-Column Metric Bar
     m_col1, m_col2, m_col3, m_col4 = st.columns(4)
     with m_col1:
         st.markdown(f'<div class="metric-glow-box"><div class="metric-glow-label">Matrix Certainty</div><div class="metric-glow-val" style="color:#00F0FF;">{result["confidence"]}%</div></div>', unsafe_allow_html=True)
@@ -591,18 +600,17 @@ def render_live_dashboard(pair):
     fig.add_trace(go.Scatter(x=plot_df["time"], y=plot_df["Swing_High"], mode="markers", name="Buy-Side Liquidity (BSL)", marker=dict(color="#FF4B4B", size=7, symbol="triangle-down")))
     fig.add_trace(go.Scatter(x=plot_df["time"], y=plot_df["Swing_Low"], mode="markers", name="Sell-Side Liquidity (SSL)", marker=dict(color="#00F0FF", size=7, symbol="triangle-up")))
 
-    # Structural Range Tools
     if result["recent_high"] > 0:
         fig.add_hline(y=result["recent_high"], line_dash="dash", line_color="rgba(255,75,75,0.4)", annotation_text="BSL Pool")
         fig.add_hline(y=result["recent_low"],  line_dash="dash", line_color="rgba(0,240,255,0.4)", annotation_text="SSL Pool")
         eq = result["recent_low"] + ((result["recent_high"] - result["recent_low"]) * 0.50)
         fig.add_hline(y=eq, line_dash="dot", line_color="rgba(255,255,0,0.4)", annotation_text="Equilibrium (50%)")
 
-    # MTF High Timeframe Mapping Overlay
+    # MTF Structural Lines Mapping Overlay
     mtf_boundaries = calculate_mtf_levels(pair)
     if mtf_boundaries["daily_high"] > 0:
-        fig.add_hline(y=mtf_boundaries["daily_high"], line_color="#EF4444", line_dash="solid", annotation_text="PDH Support/Resistance Pool")
-        fig.add_hline(y=mtf_boundaries["daily_low"], line_color="#10B981", line_dash="solid", annotation_text="PDL Support/Resistance Pool")
+        fig.add_hline(y=mtf_boundaries["daily_high"], line_color="#EF4444", line_dash="solid", annotation_text="PDH Pool")
+        fig.add_hline(y=mtf_boundaries["daily_low"], line_color="#10B981", line_dash="solid", annotation_text="PDL Pool")
 
     fig.update_layout(
         template="plotly_dark", 
@@ -617,12 +625,6 @@ def render_live_dashboard(pair):
 
     if "STRONG" in result["signal"] or "BUY" in result["signal"] or "SELL" in result["signal"]:
         st.info(f"🚨 **TACTICAL TIMING GUIDELINE:** {result['execution_timing']}")
-
-    # Side-panel telemetry warnings for equal formations
-    if result["eqh_status"] == "ENG_TARGET_EQH":
-        st.sidebar.warning("⚠️ ENGINE TARGET: EQH RESISTANCE DETECTED (LIQUIDITY POOL)")
-    if result["eql_status"] == "ENG_TARGET_EQL":
-        st.sidebar.warning("⚠️ ENGINE TARGET: EQL SUPPORT DETECTED (LIQUIDITY POOL)")
 
     # Quantitative score distribution slider mapping
     st.markdown("#### 🔍 Structural Orderflow Distribution Index")
@@ -660,6 +662,12 @@ def render_scanner_block():
 # =====================================================
 st.markdown('<h1 class="main-title">CORE MATRIX</h1>', unsafe_allow_html=True)
 st.markdown('<p class="sub-title-bar">INSTITUTIONAL QUANTITATIVE FOREX TERMINAL // VERSION 4.2.0</p>', unsafe_allow_html=True)
+
+# Sidebar safety rendering zone completely abstracted from deep container layers
+if st.session_state.get("eqh_detected", False):
+    st.sidebar.warning("⚠️ ENGINE TARGET: EQH RESISTANCE DETECTED (LIQUIDITY POOL)")
+if st.session_state.get("eql_detected", False):
+    st.sidebar.warning("⚠️ ENGINE TARGET: EQL SUPPORT DETECTED (LIQUIDITY POOL)")
 
 col_layout_left, col_layout_right = st.columns([1.8, 1.2])
 
