@@ -978,7 +978,6 @@ def render_live_dashboard(tf):
         st.markdown(f"**Execution Track Strategy:** <span style='color:{color_map.get(result['direction'], '#FFF')}; font-weight:bold;'>{trade_mode} Mode</span>", unsafe_allow_html=True)
         st.markdown("---")
         for check in result.get('checks', []):
-            icon = "ui" if check["passed"] else "❌"
             icon = "✅" if check["passed"] else "❌"
             color = "#10B981" if check["passed"] else "#EF4444"
             st.markdown(f"<span style='color:{color}; font-size:0.85rem; font-family:\"JetBrains Mono\";'>{icon} {check['label']}</span>", unsafe_allow_html=True)
@@ -1057,7 +1056,8 @@ with col_layout_right:
             elif "NEUTRAL" in current_result["signal"] and not current_result["is_scalping"]:
                 st.error("Execution Aborted: Algorithmic parameters mismatch. No active breakout elements identified.")
             else:
-                message = f"""👑 <b>SCALPING ROBOT PRO V2.0 MT5 PLATFORM NODE</b>
+                # FIXED: Scoped variable setup to completely prevent local NameErrors
+                bot_message = f"""👑 <b>SCALPING ROBOT PRO V2.0 MT5 PLATFORM NODE</b>
 
 <b>EXECUTION PARAMETERS:</b>
 • Symbol: <code>XAUUSD</code> [{selected_tf}]
@@ -1074,6 +1074,8 @@ with col_layout_right:
 
 🕒 <i>Transmission Frame: {current_result['timestamp']} UTC</i>"""
                 
-                success, err_msg = send_telegram(message)
-                if success: st.toast("Scalping Robot payload processed across MT5 arrays successfully!", icon="🚀")
-                else: st.error(f"Transmission Failed: {err_msg}")
+                success, err_msg = send_telegram(bot_message)
+                if success: 
+                    st.toast("Scalping Robot payload processed across MT5 arrays successfully!", icon="🚀")
+                else: 
+                    st.error(f"Transmission Failed: {err_msg}") Failed: {err_msg}")
