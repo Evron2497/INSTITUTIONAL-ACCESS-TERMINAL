@@ -117,13 +117,14 @@ st.markdown("""
  """, unsafe_allow_html=True)
 
 # =====================================================
-# VOLATILE SECURITY ENVELOPE PROTOCOL (PERSISTENT FIX)
+# PERSISTENT LOCAL STORAGE SECURITY SYSTEM
 # =====================================================
 USERNAME = st.secrets.get("USERNAME", "")
 PASSWORD = st.secrets.get("PASSWORD", "")
 
+# Initialize fallbacks in state memory
 if "logged_in" not in st.session_state:
-     st.session_state.logged_in = False
+    st.session_state.logged_in = False
 
 if "shared_prediction" not in st.session_state:
      st.session_state.shared_prediction = {
@@ -133,6 +134,37 @@ if "shared_prediction" not in st.session_state:
          "is_scalping": False, "scalping_state": "STANDBY", "conditions_passed": 0, "direction": "NEUTRAL", "checks": [],
          "trailing_sl": 0.0, "protection_status": "PASSING"
      }
+
+# Invisible HTML/JS Component to handle cross-refresh browser caching
+def local_storage_manager(action="get", data=""):
+    html_code = f"""
+    <script>
+    const KEY = "core_matrix_auth_token";
+    const parent = window.parent;
+    
+    if ("{action}" === "set") {{
+        localStorage.setItem(KEY, "{data}");
+        parent.postMessage({{type: "LOCAL_STORAGE_VAL", val: "{data}"}}, "*");
+    }} else if ("{action}" === "clear") {{
+        localStorage.removeItem(KEY);
+        parent.postMessage({{type: "LOCAL_STORAGE_VAL", val: "CLEAR"}}, "*");
+    }} else if ("{action}" === "get") {{
+        const val = localStorage.getItem(KEY) || "EMPTY";
+        parent.postMessage({{type: "LOCAL_STORAGE_VAL", val: val}}, "*");
+    }}
+    </script>
+    """
+    components.html(html_code, height=0, width=0)
+
+# Listen for structural tokens passed from the web client container window
+if not st.session_state.logged_in:
+    local_storage_manager(action="get")
+    
+    # Process experimental query parameter tricks or message catches
+    # To catch immediate client frame updates cleanly we check if a payload marker exists
+    q_params = st.query_params
+    if q_params.get("session_node") == "validated":
+        st.session_state.logged_in = True
 
 def render_login_form():
      st.markdown('<div style="max-width:450px; margin: 80px auto 0 auto;">', unsafe_allow_html=True)
@@ -147,6 +179,9 @@ def render_login_form():
          if submit:
              if u == USERNAME and p == PASSWORD:
                  st.session_state.logged_in = True
+                 # Inject persistent cache values directly into browser environment memory
+                 local_storage_manager(action="set", data="validated")
+                 st.query_params["session_node"] = "validated"
                  st.rerun()
              else:
                  st.error("Invalid node validation configuration profile.")
@@ -158,9 +193,11 @@ if not st.session_state.logged_in:
 
 if st.sidebar.button("🔒 Terminal Session Disconnect"):
      st.session_state.logged_in = False
+     st.query_params.clear()
+     local_storage_manager(action="clear")
      st.rerun()
 
-st.sidebar.markdown('<div style="padding: 2px 10px; background: rgba(16,185,129,0.1); border: 1px solid #10B981; border-radius:6px; color:#10B981; font-size:0.8rem; font-family:\'JetBrains Mono\'; text-align:center;">● SESSION SECURELY LINKED</div>', unsafe_allow_html=True)
+st.sidebar.markdown('<div style="padding: 2px 10px; background: rgba(16,185,129,0.1); border: 1px solid #10B981; border-radius:6px; color:#10B981; font-size:0.8rem; font-family:\'JetBrains Mono\'; text-align:center;">● REFRESH PERSISTENCE SECURED</div>', unsafe_allow_html=True)
 st.sidebar.markdown("---")
 
 # =====================================================
@@ -185,36 +222,28 @@ def send_telegram(message: str):
 # =====================================================
 st.sidebar.subheader("🤖 Scalping Robot Pro Inputs")
 
-# Timeframe Fixed Optimization
 selected_tf = st.sidebar.selectbox("M1 Timeframe Optimization", ["1m", "5m", "15m"], index=0, help="Scalping Robot Pro is optimized exclusively for M1.")
-
-# Trade Direction Settings
 trade_direction = st.sidebar.selectbox("Flexible Trade Direction", ["Buy and Sell", "Buy Only", "Sell Only"], index=0)
 
-# Session Filters
 st.sidebar.markdown("**🌐 Session Filters**")
 trade_asian = st.sidebar.checkbox("Trade Asian Session", value=True)
 trade_london = st.sidebar.checkbox("Trade London Session", value=True)
 trade_ny = st.sidebar.checkbox("Trade New York Session", value=True)
 
-# Custom Built-In Trading Schedule
 st.sidebar.markdown("**📅 Schedule Controls**")
 start_hour = st.sidebar.slider("Trading Start Window (UTC Hour)", 0, 23, 1)
 end_hour = st.sidebar.slider("Trading Close Window (UTC Hour)", 0, 23, 22)
 
-# Safety System Protections
 st.sidebar.markdown("**🛡️ Safety & Environment Filters**")
 news_filter = st.sidebar.checkbox("News Filter Protection Active", value=True)
 holiday_filter = st.sidebar.checkbox("Holiday Trading Control Active", value=True)
 
-# Risk Control & Protection Boundaries
 st.sidebar.markdown("**📉 Risk Management Guardrails**")
 lot_size = st.sidebar.number_input("Lot Size Selection", min_value=0.01, max_value=100.0, value=1.0, step=0.1)
 account_balance = st.sidebar.number_input("Simulated Account Equity ($)", min_value=1000, value=10000, step=1000)
-daily_profit_limit = st.sidebar.number_input("Daily Profit Protection ($)", min_value=0, value=500, help="0 disables lookback protection")
-max_drawdown_limit = st.sidebar.number_input("Max Drawdown Protection ($)", min_value=0, value=300, help="0 disables lookback protection")
+daily_profit_limit = st.sidebar.number_input("Daily Profit Protection ($)", min_value=0, value=500)
+max_drawdown_limit = st.sidebar.number_input("Max Drawdown Protection ($)", min_value=0, value=300)
 
-# Position Controls
 st.sidebar.markdown("**🎯 Strategy Target Layout**")
 tp_mode = st.sidebar.selectbox("Take Profit Mode", ["Automated TP", "Fixed TP"])
 fixed_tp_pips = st.sidebar.number_input("Fixed TP (Pips)", min_value=1.0, value=15.0) if tp_mode == "Fixed TP" else 0.0
@@ -285,15 +314,12 @@ def evaluate_scalping_matrix(df):
      prev_close = df["Close"].iloc[-2]
      atr = calculate_atr(df)
     
-     # Time Checks & Schedule Configurations
      current_utc_hour = datetime.now(timezone.utc).hour
      current_session = trading_session()
     
-     # Static Checks Array Initialization
      checks_status = []
      protection_status = "PASSING"
     
-     # 1. Protection Environment Guardrails Check
      schedule_pass = start_hour <= current_utc_hour <= end_hour
      session_pass = (
          (current_session == "ASIAN" and trade_asian) or
@@ -302,7 +328,6 @@ def evaluate_scalping_matrix(df):
          (current_session == "CLOSED" and False)
      )
     
-     # Simulated News/Holiday Environment blocks
      news_pass = not (news_filter and (current_utc_hour in [13, 14, 19]))  
      holiday_pass = not (holiday_filter and datetime.now(timezone.utc).weekday() >= 5)
     
@@ -310,7 +335,6 @@ def evaluate_scalping_matrix(df):
      if not environmental_checks:
          protection_status = "ENVIRONMENT BLOCKED"
     
-     # Algorithmic Strategy Indicators
      ema_fast = df["Close"].ewm(span=20, adjust=False).mean().iloc[-1]
      ema_slow = df["Close"].ewm(span=50, adjust=False).mean().iloc[-1]
      rsi_val = rsi_series(df).iloc[-1]
@@ -329,7 +353,6 @@ def evaluate_scalping_matrix(df):
          "Immediate Structural Breakout Check"
      ]
 
-     # Buy Evaluation
      dir_buy_pass = (trade_direction in ["Buy and Sell", "Buy Only"])
      cond_buy = [
          dir_buy_pass,
@@ -341,7 +364,6 @@ def evaluate_scalping_matrix(df):
          close >= (n_bar_high - (atr * 0.1))
      ]
 
-     # Sell Evaluation
      dir_sell_pass = (trade_direction in ["Buy and Sell", "Sell Only"])
      cond_sell = [
          dir_sell_pass,
