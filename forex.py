@@ -530,15 +530,6 @@ success, err_msg = send_telegram(message)
 
 
 
-#     """
-
-
-
-
-
-
-
-
 import os
 from datetime import datetime, timezone
 import time
