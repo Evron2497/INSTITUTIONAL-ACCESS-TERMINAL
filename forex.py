@@ -287,7 +287,7 @@ def compute_rsi_series(df, period=14):
 # --- ENGINE A: SAFESCALPERPRO 7-GATE MATRIX ---
 def process_safescalperpro_logic(df):
     if len(df) < max(slow_ema_period, 100):
-        return {"is_scalping": False, "state": "GUARD: INSUFFICIENT DATA", "passed": 0, "direction": "NEUTRAL", "checks": []}
+        return {"is_scalping": False, "state": "GUARD: INSUFFICIENT DATA", "passed": 0, "direction": "NEUTRAL", "checks": [], "atr": 0.50, "rsi": 50.0}
     
     close, prev_close = float(df["Close"].iloc[-1]), float(df["Close"].iloc[-2])
     df["EMA_Fast"] = df["Close"].ewm(span=fast_ema_period, adjust=False).mean()
@@ -366,7 +366,7 @@ def process_suleiman_analytics_engine(df):
 
 # --- ENGINE C: BRIDZIK v7.2 MEAN REVERSION BLOCK ---
 def process_bridzik_v72_matrix(df):
-    if len(df) < 30: return {"is_triggered": False, "bias": "NEUTRAL", "subpositions": 1, "exit_state": "STANDBY"}
+    if len(df) < 30: return {"is_triggered": False, "bias": "NEUTRAL", "subpositions": 1, "exit_state": "STANDBY", "deviation": 0.0, "basis": 0.0}
     
     close = float(df["Close"].iloc[-1])
     df["EMA_Basis"] = df["Close"].ewm(span=20, adjust=False).mean()
@@ -402,6 +402,7 @@ def run_integrated_quant_pipeline(df):
      pip_scale = 0.10 if selected_symbol in ["XAUUSD", "XAGUSD"] else 0.0001
      price = float(df["Close"].iloc[-1])
      
+     # Always compute indicators safely to keep matrix metrics from throwing KeyErrors
      ea_matrix = process_safescalperpro_logic(df)
      suleiman_matrix = process_suleiman_analytics_engine(df)
      countdown_timer = get_suleiman_candle_countdown(selected_tf)
@@ -417,7 +418,7 @@ def run_integrated_quant_pipeline(df):
           return {
               "signal": f"BRIDZIK {brk['bias']}", "confidence": 90.0 if brk["is_triggered"] else 0.0,
               "entry": round(price, 2), "tp": "NONE (DYNAMIC EXITS)", "sl": round(sl, 2), "pips": 0.0,
-              "rsi": 50.0, "structure": f"DEVIATION: {brk['deviation']} SD", "session": "V7.2 LIVE MATRIX",
+              "rsi": round(ea_matrix.get("rsi", 50.0), 1), "structure": f"DEVIATION: {brk['deviation']} SD", "session": "V7.2 LIVE MATRIX",
               "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "is_scalping": brk["is_triggered"],
               "scalping_state": brk["exit_state"], "conditions_passed": brk["subpositions"], "direction": brk["bias"],
               "checks": [], "protection_status": "ACTIVE", "calculated_lot": max(0.01, round(calculated_lot, 2)), "sl_pips": bridzik_safety_sl,
@@ -432,7 +433,7 @@ def run_integrated_quant_pipeline(df):
           tp = price + (atr_val * 4.0) if suleiman_matrix["bias"] == "BULLISH" else price - (atr_val * 4.0)
           return {
               "signal": f"SULEIMAN {suleiman_matrix['bias']}", "confidence": 88.0, "entry": round(price, 2),
-              "tp": round(tp, 2), "sl": round(sl, 2), "pips": round(abs(tp-price)/pip_scale, 1), "rsi": round(ea_matrix["rsi"], 1),
+              "tp": round(tp, 2), "sl": round(sl, 2), "pips": round(abs(tp-price)/pip_scale, 1), "rsi": round(ea_matrix.get("rsi", 50.0), 1),
               "structure": "SULEIMAN LEVEL MATRIX", "session": suleiman_matrix["structure"], "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
               "is_scalping": True, "scalping_state": "ANALYSIS ACTIVE", "conditions_passed": 7, "direction": "BUY" if suleiman_matrix["bias"] == "BULLISH" else "SELL",
               "checks": [], "protection_status": "PASSING", "calculated_lot": fixed_lot_fallback, "sl_pips": 20, "smc_market_bias": suleiman_matrix["bias"],
@@ -448,7 +449,7 @@ def run_integrated_quant_pipeline(df):
           
           return {
               "signal": f"PRO ACTIVE {ea_matrix['direction']}" if ea_matrix["is_scalping"] else "NEUTRAL", "confidence": round((ea_matrix["passed"] / 7) * 100, 1),
-              "entry": round(price, 2), "tp": round(tp, 2), "sl": round(sl, 2), "pips": round(abs(tp-price)/pip_scale, 1), "rsi": round(ea_matrix["rsi"], 1),
+              "entry": round(price, 2), "tp": round(tp, 2), "sl": round(sl, 2), "pips": round(abs(tp-price)/pip_scale, 1), "rsi": round(ea_matrix.get("rsi", 50.0), 1),
               "structure": ea_matrix["state"], "session": "RETAIL LIQUIDITY FLOW", "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
               "is_scalping": ea_matrix["is_scalping"], "scalping_state": ea_matrix["state"], "conditions_passed": ea_matrix["passed"], "direction": ea_matrix["direction"],
               "checks": ea_matrix["checks"], "protection_status": "PASSING", "calculated_lot": max(0.01, round(calculated_lot, 2)), "sl_pips": sl_pips_calc,
@@ -505,13 +506,13 @@ def render_live_dashboard_layer(tf):
     
      # Base Plotly Layout Setup
      fig.update_layout(
-         template="plotly_dark", 
-         height=380, 
-         xaxis_rangeslider_visible=False, 
-         uirevision="keep", 
-         paper_bgcolor='rgba(0,0,0,0)', 
-         plot_bgcolor='rgba(0,0,0,0)', 
-         margin=dict(l=10, r=10, t=10, b=10)
+          template="plotly_dark", 
+          height=380, 
+          xaxis_rangeslider_visible=False, 
+          uirevision="keep", 
+          paper_bgcolor='rgba(0,0,0,0)', 
+          plot_bgcolor='rgba(0,0,0,0)', 
+          margin=dict(l=10, r=10, t=10, b=10)
      )
 
      # High-Performance Suleiman HUD Text Injector via Layout Annotations (Fixes go.Scatter property exceptions)
@@ -597,18 +598,15 @@ with layout_col_right:
 
 ACTIVE MODULE: <code>{engine_mode.upper()}</code>
 INSTRUMENT SPECIFIER: <b>{selected_symbol}</b> [{selected_tf}]
-CANDLE CLOCK TIMER REMAINING: <code>{shared_res['candle_time_remaining']}</code>
-STRUCTURAL CLASSIFICATION: <code>{shared_res['session']}</code>
-
-🎯 <b>EXPERT POSITION MATRIX DATA:</b>
-• Core Intent State: <b>{shared_res['signal']}</b>
-• Target Node Entry Point: <code>{shared_res['entry']}</code>
-• Risk Invalidation Boundary (SL): <code>{shared_res['sl']}</code>
-• Mitigation Matrix Profit Limit (TP): <code>{shared_res['tp']}</code>
-• Computed Scale Allocation: <code>{shared_res['calculated_lot']} Lots</code>
+CANDLE CLOCK STATUS: {shared_res.get('candle_time_remaining', '00:00')}
+CURRENT VALUE STATE: {shared_res.get('entry', 0.0)}
+INTEGRATED SIGNAL OUTBOUND: {shared_res.get('signal', 'NEUTRAL')}
+Target TakeProfit level: {shared_res.get('tp', '0.0')}
+Emergency StopLoss protection line: {shared_res.get('sl', 0.0)}
+Calculated Contract Lot risk distribution: {shared_res.get('calculated_lot', 0.1)} Lots
 """
                     success, err_msg = send_telegram(payload_text)
                     if success:
-                         st.success("Telemetry payload transmission successful.")
+                        st.success("Telemetry payload transmitted successfully across structural vectors.")
                     else:
-                         st.error(f"Transmission Pipeline Fault: {err_msg}")
+                        st.error(f"Transmission Pipeline Interface Failure: {err_msg}")
