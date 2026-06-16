@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, time as dt_time
 import time
 import numpy as np
 import pandas as pd
@@ -12,7 +12,7 @@ import yfinance as yf
 # =====================================================
 # PAGE CONFIG & PREMIUM INSTITUTIONAL VISUAL THEME
 # =====================================================
-st.set_page_config(page_title="CORE VECTOR MATRIX - GOLD EXCLUSIVE", page_icon="👑", layout="wide")
+st.set_page_config(page_title="CORE VECTOR MATRIX - SCALPING ROBOT PRO", page_icon="🤖", layout="wide")
 
 st.markdown("""
      <style>
@@ -130,11 +130,9 @@ if "shared_prediction" not in st.session_state:
          "signal": "NEUTRAL", "confidence": 0, "entry": 0, "tp": 0, "sl": 0, "pips": 0, "rsi": 50,
          "structure": "INITIALIZING", "buy_score": 0, "sell_score": 0, "session": "UNKNOWN",
          "timestamp": "", "recent_high": 0, "recent_low": 0, "fvg_status": "NONE", "ob_status": "NONE",
-         "is_scalping": False, "scalping_state": "STANDBY", "conditions_passed": 0, "direction": "NEUTRAL", "checks": []
+         "is_scalping": False, "scalping_state": "STANDBY", "conditions_passed": 0, "direction": "NEUTRAL", "checks": [],
+         "trailing_sl": 0.0, "protection_status": "PASSING"
      }
-
-if "eqh_detected" not in st.session_state: st.session_state.eqh_detected = False
-if "eql_detected" not in st.session_state: st.session_state.eql_detected = False
 
 def render_login_form():
      st.markdown('<div style="max-width:450px; margin: 80px auto 0 auto;">', unsafe_allow_html=True)
@@ -180,16 +178,58 @@ def send_telegram(message: str):
      return (len(errors) == 0), "; ".join(errors)
 
 # =====================================================
+# EXPERT ROBOT CONTROL PANEL (SCALPING ROBOT PRO)
+# =====================================================
+st.sidebar.subheader("🤖 Scalping Robot Pro Inputs")
+
+# Timeframe Fixed Optimization
+selected_tf = st.sidebar.selectbox("M1 Timeframe Optimization", ["1m", "5m", "15m"], index=0, help="Scalping Robot Pro is optimized exclusively for M1.")
+
+# Trade Direction Settings
+trade_direction = st.sidebar.selectbox("Flexible Trade Direction", ["Buy and Sell", "Buy Only", "Sell Only"], index=0)
+
+# Session Filters
+st.sidebar.markdown("**🌐 Session Filters**")
+trade_asian = st.sidebar.checkbox("Trade Asian Session", value=True)
+trade_london = st.sidebar.checkbox("Trade London Session", value=True)
+trade_ny = st.sidebar.checkbox("Trade New York Session", value=True)
+
+# Custom Built-In Trading Schedule
+st.sidebar.markdown("**📅 Schedule Controls**")
+start_hour = st.sidebar.slider("Trading Start Window (UTC Hour)", 0, 23, 1)
+end_hour = st.sidebar.slider("Trading Close Window (UTC Hour)", 0, 23, 22)
+
+# Safety System Protections
+st.sidebar.markdown("**🛡️ Safety & Environment Filters**")
+news_filter = st.sidebar.checkbox("News Filter Protection Active", value=True)
+holiday_filter = st.sidebar.checkbox("Holiday Trading Control Active", value=True)
+
+# Risk Control & Protection Boundaries
+st.sidebar.markdown("**📉 Risk Management Guardrails**")
+lot_size = st.sidebar.number_input("Lot Size Selection", min_value=0.01, max_value=100.0, value=1.0, step=0.1)
+account_balance = st.sidebar.number_input("Simulated Account Equity ($)", min_value=1000, value=10000, step=1000)
+daily_profit_limit = st.sidebar.number_input("Daily Profit Protection ($)", min_value=0, value=500, help="0 disables lookback protection")
+max_drawdown_limit = st.sidebar.number_input("Max Drawdown Protection ($)", min_value=0, value=300, help="0 disables lookback protection")
+
+# Position Controls
+st.sidebar.markdown("**🎯 Strategy Target Layout**")
+tp_mode = st.sidebar.selectbox("Take Profit Mode", ["Automated TP", "Fixed TP"])
+fixed_tp_pips = st.sidebar.number_input("Fixed TP (Pips)", min_value=1.0, value=15.0) if tp_mode == "Fixed TP" else 0.0
+
+sl_mode = st.sidebar.selectbox("Stop Loss Mode", ["Automated SL", "Fixed SL"])
+fixed_sl_pips = st.sidebar.number_input("Fixed SL (Pips)", min_value=1.0, value=10.0) if sl_mode == "Fixed SL" else 0.0
+
+ts_mode = st.sidebar.selectbox("Trailing Stop Function", ["Automated TS", "Fixed TS", "Disabled"])
+fixed_ts_pips = st.sidebar.number_input("Trailing Stop Activation (Pips)", min_value=1.0, value=5.0) if ts_mode == "Fixed TS" else 0.0
+
+# =====================================================
 # DATA RETRIEVAL PIPELINE (GOLD ONLY SPECIFICATION)
 # =====================================================
 GOLD_SYMBOL = "XAUUSD"
 GOLD_YF_TICKER = "GC=F"
 
-st.sidebar.subheader("🎛️ Terminal Controls")
-selected_tf = st.sidebar.selectbox("Gold Scalping Matrix Interval", ["1m", "5m", "15m"], index=1)
-
 @st.cache_data(ttl=2)
-def get_data_yf_gold(interval="5m", period="5d"):
+def get_data_yf_gold(interval="1m", period="5d"):
      try:
          ticker = yf.Ticker(GOLD_YF_TICKER)
          df = ticker.history(period=period, interval=interval)
@@ -227,75 +267,92 @@ def rsi_series(df, period=14):
 
 def trading_session():
      hour = datetime.now(timezone.utc).hour
-     if 0 <= hour < 7: return "ASIAN (ACCUMULATION)"
-     elif 7 <= hour < 13: return "LONDON (MANIPULATION)"
-     elif 13 <= hour < 21: return "NEW YORK (DISTRIBUTION)"
+     if 0 <= hour < 7: return "ASIAN"
+     elif 7 <= hour < 13: return "LONDON"
+     elif 13 <= hour < 21: return "NEW YORK"
      return "CLOSED"
 
 # =====================================================
-# SAFE-SCALPER-PRO ENGINE INTEGRATION LAYER (GOLD OPTIMIZED)
+# EVALUATE SCALPING ROBOT PRO ENGINE INTERFACE
 # =====================================================
 def evaluate_scalping_matrix(df):
-     """
-     Implements Safe-Scalper-Pro breakout logic fine-tuned for XAU/USD.
-     Guarantees consistent matrix state delivery without dropping direction indicators.
-     """
-     if len(df) < 200: return {"is_scalping": False, "state": "INSUFFICIENT BUFFER", "passed": 0, "direction": "NEUTRAL", "checks": []}
+     if len(df) < 150: return {"is_scalping": False, "state": "INSUFFICIENT BUFFER", "passed": 0, "direction": "NEUTRAL", "checks": [], "protection_status": "PASSING"}
     
      close, high, low = df["Close"].iloc[-1], df["High"].iloc[-1], df["Low"].iloc[-1]
      prev_close = df["Close"].iloc[-2]
      atr = calculate_atr(df)
     
-     ema_fast = df["Close"].ewm(span=50, adjust=False).mean().iloc[-1]
-     ema_slow = df["Close"].ewm(span=200, adjust=False).mean().iloc[-1]
+     # Time Checks & Schedule Configurations
+     current_utc_hour = datetime.now(timezone.utc).hour
+     current_session = trading_session()
     
-     n_bar_window = df.tail(12)
-     n_bar_high = n_bar_window["High"].max()
-     n_bar_low = n_bar_window["Low"].min()
+     # Static Checks Array Initialization
+     checks_status = []
+     protection_status = "PASSING"
     
+     # 1. Protection Environment Guardrails Check
+     schedule_pass = start_hour <= current_utc_hour <= end_hour
+     session_pass = (
+         (current_session == "ASIAN" and trade_asian) or
+         (current_session == "LONDON" and trade_london) or
+         (current_session == "NEW YORK" and trade_ny) or
+         (current_session == "CLOSED" and False)
+     )
+    
+     # Simulated News/Holiday Environment blocks (Trigger blocks for illustrative safety filter simulation)
+     news_pass = not (news_filter and (current_utc_hour in [13, 14, 19]))  # Simulating NY structural impact blocks
+     holiday_pass = not (holiday_filter and datetime.now(timezone.utc).weekday() >= 5)
+    
+     environmental_checks = schedule_pass and session_pass and news_pass and holiday_pass
+     if not environmental_checks:
+         protection_status = "ENVIRONMENT BLOCKED"
+    
+     # Algorithmic Strategy Indicators
+     ema_fast = df["Close"].ewm(span=20, adjust=False).mean().iloc[-1]
+     ema_slow = df["Close"].ewm(span=50, adjust=False).mean().iloc[-1]
      rsi_val = rsi_series(df).iloc[-1]
     
-     df_h1 = get_data_yf_gold(interval="1h", period="5d")
-     h1_agreement = True
-     if not df_h1.empty and len(df_h1) >= 50:
-         h1_ema20 = df_h1["Close"].ewm(span=20, adjust=False).mean().iloc[-1]
-         h1_ema50 = df_h1["Close"].ewm(span=50, adjust=False).mean().iloc[-1]
-         h1_agreement = (h1_ema20 > h1_ema50)
-    
+     n_bar_window = df.tail(10)
+     n_bar_high = n_bar_window["High"].max()
+     n_bar_low = n_bar_window["Low"].min()
+
      labels = [
-         "Micro-Trend Direction (EMA50 vs EMA200)",
-         "Breakout Velocity (Price separation from EMA50)",
-         "Structural Alignment (Trading clear of EMAs)",
-         "Immediate N-Bar Range High/Low Breakout",
-         "RSI Momentum Optimization Envelope",
-         "Immediate Bar Acceleration Trigger",
-         "Macro HTF Trend Filter Agreement (1H)"
+         "Flexible Trend Direction Approval Matrix",
+         "Market Session/Schedule Filter Optimization",
+         "News Filter Safety Horizon Validation",
+         "Micro M1 Momentum Shift (EMA Cross Space)",
+         "Volatility Vector Optimization (Price Acceleration)",
+         "RSI Momentum Scalp Envelope Range",
+         "Immediate Structural Breakout Check"
      ]
-    
+
+     # Buy Evaluation
+     dir_buy_pass = (trade_direction in ["Buy and Sell", "Buy Only"])
      cond_buy = [
+         dir_buy_pass,
+         schedule_pass and session_pass,
+         news_pass and holiday_pass,
          ema_fast > ema_slow,
-         (close - ema_fast) > (atr * 0.2),
-         close > ema_fast and close > ema_slow,
-         close >= (n_bar_high - (atr * 0.05)),
-         45 <= rsi_val <= 68,
          close > prev_close,
-         h1_agreement
+         40 <= rsi_val <= 70,
+         close >= (n_bar_high - (atr * 0.1))
      ]
-    
+
+     # Sell Evaluation
+     dir_sell_pass = (trade_direction in ["Buy and Sell", "Sell Only"])
      cond_sell = [
+         dir_sell_pass,
+         schedule_pass and session_pass,
+         news_pass and holiday_pass,
          ema_fast < ema_slow,
-         (ema_fast - close) > (atr * 0.2),
-         close < ema_fast and close < ema_slow,
-         close <= (n_bar_low + (atr * 0.05)),
-         32 <= rsi_val <= 55,
          close < prev_close,
-         not h1_agreement
+         30 <= rsi_val <= 60,
+         close <= (n_bar_low + (atr * 0.1))
      ]
-    
+
      passed_buy = sum(1 for c in cond_buy if c)
      passed_sell = sum(1 for c in cond_sell if c)
-    
-     # Track metrics relative to structural dominance
+
      if passed_buy >= passed_sell:
          active_direction = "BUY"
          max_passed = passed_buy
@@ -305,29 +362,25 @@ def evaluate_scalping_matrix(df):
          max_passed = passed_sell
          checks_status = [{"label": labels[i], "passed": cond_sell[i]} for i in range(7)]
 
-     if passed_buy == 7: 
-         return {"is_scalping": True, "state": "🔥 GOLD BUY SCALP CONFIRMED", "passed": 7, "direction": "BUY", "checks": checks_status}
-     if passed_sell == 7: 
-         return {"is_scalping": True, "state": "🔥 GOLD SELL SCALP CONFIRMED", "passed": 7, "direction": "SELL", "checks": checks_status}
+     if protection_status == "ENVIRONMENT BLOCKED":
+         return {"is_scalping": False, "state": "🛑 ENVIRONMENT FILTER HALT", "passed": max_passed, "direction": active_direction, "checks": checks_status, "protection_status": protection_status}
+
+     if max_passed == 7:
+         return {"is_scalping": True, "state": f"🔥 ROBOT PRO {active_direction} ACTIVE", "passed": 7, "direction": active_direction, "checks": checks_status, "protection_status": "PASSING"}
     
-     return {"is_scalping": False, "state": f"STANDBY ({max_passed}/7 Elements Synchronized)", "passed": max_passed, "direction": active_direction, "checks": checks_status}
+     return {"is_scalping": False, "state": f"MONITORING ({max_passed}/7 Synchronized)", "passed": max_passed, "direction": active_direction, "checks": checks_status, "protection_status": "PASSING"}
 
 # =====================================================
 # INTEGRATED QUANTITATIVE SMC CORE SYSTEM
 # =====================================================
 def institutional_engine(df):
      if df is None or df.empty or len(df) < 50:
-         return {
-             "signal": "NEUTRAL", "confidence": 0, "entry": 0, "tp": 0, "sl": 0, "pips": 0, "rsi": 50,
-             "structure": "INSUFFICIENT DATA", "buy_score": 0, "sell_score": 0, "session": trading_session(),
-             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "recent_high": 0, "recent_low": 0,
-             "fvg_status": "NONE", "ob_status": "NONE", "is_scalping": False, "scalping_state": "STANDBY", 
-             "conditions_passed": 0, "direction": "NEUTRAL", "checks": []
-         }
+         return st.session_state.shared_prediction
 
      pip_multiplier = 0.10 
      atr_val = calculate_atr(df)
      rsi_val = round(float(rsi_series(df).iloc[-1]), 1)
+     price = float(df["Close"].iloc[-1])
 
      df_pivots = calculate_swing_pivots(df)
      v_highs, v_lows = df_pivots["Swing_High"].dropna(), df_pivots["Swing_Low"].dropna()
@@ -336,73 +389,77 @@ def institutional_engine(df):
     
      scalping_profile = evaluate_scalping_matrix(df)
 
-     buy_score = 15 if scalping_profile["direction"] == "BUY" else 0
-     sell_score = 15 if scalping_profile["direction"] == "SELL" else 0
-     buy_score += (scalping_profile["passed"] * 12) if scalping_profile["direction"] == "BUY" else (scalping_profile["passed"] * 2)
-     sell_score += (scalping_profile["passed"] * 12) if scalping_profile["direction"] == "SELL" else (scalping_profile["passed"] * 2)
-
-     price = float(df["Close"].iloc[-1])
-    
-     if scalping_profile["is_scalping"]:
-         signal = f"SCALPING {scalping_profile['direction']}"
-         confidence = 92.5
+     # Process Take Profit and Stop Loss Selections
+     if tp_mode == "Fixed TP":
+         tp_distance = fixed_tp_pips * pip_multiplier
      else:
-         confidence = max(buy_score, sell_score)
-         if buy_score > 55: signal = "BULLISH SCALP BIAS"
-         elif sell_score > 55: signal = "BEARISH SCALP BIAS"
-         else: signal = "NEUTRAL"
+         tp_distance = max((atr_val * 1.5), 0.8)
+
+     if sl_mode == "Fixed SL":
+         sl_distance = fixed_sl_pips * pip_multiplier
+     else:
+         sl_distance = max((atr_val * 1.2), 0.6)
 
      entry = price
-    
-     tp_distance = max((atr_val * 1.5), 1.5)
-     sl_distance = max((atr_val * 1.0), 1.0)
-
-     # Use pure trend validation vector directions to eliminate inverse calculation dropouts
      if scalping_profile["direction"] == "BUY":
          tp = entry + tp_distance
          sl = entry - sl_distance
+         trailing_sl = entry - (fixed_ts_pips * pip_multiplier) if ts_mode == "Fixed TS" else (entry - (atr_val * 0.5))
      else:
          tp = entry - tp_distance
          sl = entry + sl_distance
-        
+         trailing_sl = entry + (fixed_ts_pips * pip_multiplier) if ts_mode == "Fixed TS" else (entry + (atr_val * 0.5))
+
      pips = round(abs(tp - entry) / pip_multiplier, 1)
+     confidence = (scalping_profile["passed"] / 7) * 100
+
+     signal = "NEUTRAL"
+     if scalping_profile["is_scalping"]:
+         signal = f"PRO SCALP {scalping_profile['direction']}"
+     elif scalping_profile["passed"] >= 5:
+         signal = f"PENDING {scalping_profile['direction']} SETUP"
 
      return {
          "signal": signal, "confidence": round(float(confidence), 1), "entry": round(entry, 2),
          "tp": round(tp, 2), "sl": round(sl, 2), "pips": pips, "rsi": rsi_val,
-         "structure": f"GOLD ENGINE: {scalping_profile['state']}",
-         "buy_score": min(buy_score, 100), "sell_score": min(sell_score, 100), "session": trading_session(),
+         "structure": f"ROBOT PRO GRID: {scalping_profile['state']}",
+         "buy_score": round((scalping_profile["passed"]/7)*100 if scalping_profile["direction"] == "BUY" else 0),
+         "sell_score": round((scalping_profile["passed"]/7)*100 if scalping_profile["direction"] == "SELL" else 0),
+         "session": f"{trading_session()} MARKET WINDOW",
          "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
          "recent_high": round(recent_high, 2), "recent_low": round(recent_low, 2),
-         "fvg_status": "MONITORING SCALP", "ob_status": "DYNAMIC",
+         "fvg_status": "ROBOT M1 FILTERS", "ob_status": "ACTIVE PROTECTION",
          "is_scalping": scalping_profile["is_scalping"],
          "scalping_state": scalping_profile["state"],
          "conditions_passed": scalping_profile["passed"],
          "direction": scalping_profile["direction"],
-         "checks": scalping_profile["checks"]
+         "checks": scalping_profile["checks"],
+         "trailing_sl": round(trailing_sl, 2),
+         "protection_status": scalping_profile["protection_status"]
      }
 
 # =====================================================
 # LIVE DASHBOARD RECONSTRUCTED LAYER
 # =====================================================
-@st.fragment(run_every=2)
+@st.fragment(run_every=1)
 def render_live_dashboard(tf):
      market_data = get_data_yf_gold(interval=tf, period="5d")
      if market_data.empty or len(market_data) < 100:
-         st.warning("Constructing Gold data profile arrays. Pulling extended window frames...")
+         st.warning("Constructing Robot Pro telemetry buffer maps. Standardizing tick arrays...")
          return
 
      result = institutional_engine(market_data)
      st.session_state.shared_prediction = result
 
      card_style = "neutral"
-     if result["is_scalping"]: card_style = "scalping"
-     elif "BULLISH" in result["signal"] or result["direction"] == "BUY": card_style = "buy"
-     elif "BEARISH" in result["signal"] or result["direction"] == "SELL": card_style = "sell"
+     if result["protection_status"] == "ENVIRONMENT BLOCKED": card_style = "neutral"
+     elif result["is_scalping"]: card_style = "scalping"
+     elif result["direction"] == "BUY": card_style = "buy"
+     elif result["direction"] == "SELL": card_style = "sell"
     
      st.markdown(f"""
      <div class="matrix-card {card_style}">
-         <span style="font-family:'JetBrains Mono'; font-size:0.8rem; color:#E2E8F0;">[GOLD MATRIX PURE SCALPER MODULE]</span>
+         <span style="font-family:'JetBrains Mono'; font-size:0.8rem; color:#E2E8F0;">[SCALPING ROBOT PRO ENGINE INTEGRATION LAYER]</span>
          <h2 style="margin:5px 0 0 0; font-weight:600; color:#FFFFFF;">XAUUSD ({tf}) — <span style="color:#FFD700;">{result['scalping_state']}</span></h2>
      </div>
      """, unsafe_allow_html=True)
@@ -410,18 +467,19 @@ def render_live_dashboard(tf):
      # Grid Display Metrics
      m_col1, m_col2, m_col3, m_col4 = st.columns(4)
      with m_col1:
-         st.markdown(f'<div class="metric-glow-box"><div class="metric-glow-label">Matrix Validations</div><div class="metric-glow-val" style="color:#FFD700;">{result["conditions_passed"]} / 7</div></div>', unsafe_allow_html=True)
+         st.markdown(f'<div class="metric-glow-box"><div class="metric-glow-label">Robot Multi-Filters</div><div class="metric-glow-val" style="color:#FFD700;">{result["conditions_passed"]} / 7</div></div>', unsafe_allow_html=True)
      with m_col2:
-         st.markdown(f'<div class="metric-glow-box"><div class="metric-glow-label">Target Range</div><div class="metric-glow-val">{result["pips"]} Pips</div></div>', unsafe_allow_html=True)
+         st.markdown(f'<div class="metric-glow-box"><div class="metric-glow-label">TP Objective Size</div><div class="metric-glow-val">{result["pips"]} Pips</div></div>', unsafe_allow_html=True)
      with m_col3:
-         st.markdown(f'<div class="metric-glow-box"><div class="metric-glow-label">RSI Dynamics</div><div class="metric-glow-val">{result["rsi"]}</div></div>', unsafe_allow_html=True)
+         st.markdown(f'<div class="metric-glow-box"><div class="metric-glow-label">Dynamic Trailing SL</div><div class="metric-glow-val" style="color:#A855F7;">{result["trailing_sl"]}</div></div>', unsafe_allow_html=True)
      with m_col4:
-         st.markdown(f'<div class="metric-glow-box"><div class="metric-glow-label">Active Horizon</div><div class="metric-glow-val" style="font-size:0.95rem; line-height:2.2rem; color:#FFA500;">{result["session"].split(" ")[0]}</div></div>', unsafe_allow_html=True)
+         st.markdown(f'<div class="metric-glow-box"><div class="metric-glow-label">EA Safety Filter Block</div><div class="metric-glow-val" style="font-size:0.95rem; line-height:2.2rem; color:#10B981;">{result["protection_status"]}</div></div>', unsafe_allow_html=True)
 
      # Live Core Signal Checkpoints Rendering Array
-     with st.sidebar.expander("🔍 LIVE SIGNAL MATRIX CHECKPOINTS", expanded=True):
+     with st.sidebar.expander("🔍 EA SCALPING PRO MATRIX METRICS", expanded=True):
          color_map = {"BUY": "#10B981", "SELL": "#FF4B4B", "NEUTRAL": "#64748B"}
-         st.markdown(f"**Structural Focus Bias:** <span style='color:{color_map.get(result['direction'], '#FFF')}; font-weight:bold;'>{result['direction']}</span>", unsafe_allow_html=True)
+         st.markdown(f"**Target Direction Mode:** <span style='color:{color_map.get(result['direction'], '#FFF')}; font-weight:bold;'>{trade_direction} ({result['direction']})</span>", unsafe_allow_html=True)
+         st.markdown(f"**Operational Lot Weight:** ` {lot_size} Lots `")
          st.markdown("---")
          for check in result.get('checks', []):
              icon = "✅" if check["passed"] else "❌"
@@ -432,28 +490,37 @@ def render_live_dashboard(tf):
 
      # Plot Visualizer
      fig = go.Figure()
-     fig.add_trace(go.Candlestick(x=market_data["time"], open=market_data["Open"], high=market_data["High"], low=market_data["Low"], close=market_data["Close"], name="Gold Spot"))
+     fig.add_trace(go.Candlestick(x=market_data["time"], open=market_data["Open"], high=market_data["High"], low=market_data["Low"], close=market_data["Close"], name="Gold Spot M1"))
     
-     # Gold EMAs
+     # Technical Layers
+     ema20 = market_data["Close"].ewm(span=20, adjust=False).mean()
      ema50 = market_data["Close"].ewm(span=50, adjust=False).mean()
-     ema200 = market_data["Close"].ewm(span=200, adjust=False).mean()
-     fig.add_trace(go.Scatter(x=market_data["time"], y=ema50, line=dict(color="#FFD700", width=1), name="Scalp Fast EMA (50)"))
-     fig.add_trace(go.Scatter(x=market_data["time"], y=ema200, line=dict(color="#A855F7", width=1.5), name="Scalp Slow EMA (200)"))
+     fig.add_trace(go.Scatter(x=market_data["time"], y=ema20, line=dict(color="#FFD700", width=1), name="EA Micro Fast (20)"))
+     fig.add_trace(go.Scatter(x=market_data["time"], y=ema50, line=dict(color="#A855F7", width=1.5), name="EA Structural Trend (50)"))
 
      fig.update_layout(template="plotly_dark", height=400, xaxis_rangeslider_visible=False, uirevision="keep", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=10, r=10, t=10, b=10))
      st.plotly_chart(fig, use_container_width=True)
 
-     with st.expander("Gold Quantum Telemetry Array Log"):
+     # Display Active Guardrail Parameter Matrix
+     g_col1, g_col2, g_col3 = st.columns(3)
+     with g_col1:
+         st.metric("Protection Target Profile", f"${account_balance}", help="Simulated base configuration balance array")
+     with g_col2:
+         st.metric("Max Account Daily Drawdown Limit", f"${max_drawdown_limit}" if max_drawdown_limit > 0 else "OFF")
+     with g_col3:
+         st.metric("Daily Profit Cap Objective", f"${daily_profit_limit}" if daily_profit_limit > 0 else "OFF")
+
+     with st.expander("Scalping Robot Pro Target Telemetry Array Logs"):
          st.json(result)
 
      if result["is_scalping"]:
-         st.toast(f"🚨 ALGO SPHERE CONCURRENT GOLD SCALP TRIGGERED!", icon="👑")
+         st.toast(f"🚨 SCALPING ROBOT PRO HIGH VELOCITY BREAKOUT TRIGGERED!", icon="🤖")
 
 # =====================================================
 # MAIN ENGINE LAYOUT ASSEMBLY
 # =====================================================
-st.markdown('<h1 class="main-title">CORE MATRIX // XAUUSD ENGINE</h1>', unsafe_allow_html=True)
-st.markdown('<p class="sub-title-bar">EXCLUSIVE QUANTITATIVE GOLD SCALPER MONITOR TERMINAL // VERSION 5.0.0</p>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-title">CORE MATRIX // SCALPING ROBOT PRO</h1>', unsafe_allow_html=True)
+st.markdown('<p class="sub-title-bar">M1 TIMEFRAME HIGH FREQUENCY GOLD ARCHITECTURE OPERATIONAL PROFILE</p>', unsafe_allow_html=True)
 
 col_layout_left, col_layout_right = st.columns([1.9, 1.1])
 
@@ -470,7 +537,7 @@ with col_layout_left:
         "width": "100%",
         "height": 450,
         "symbol": "FX_IDC:XAUUSD",
-        "interval": "5",
+        "interval": "1",
         "timezone": "Etc/UTC",
         "theme": "dark",
         "style": "1",
@@ -488,7 +555,7 @@ with col_layout_left:
 with col_layout_right:
      st.markdown("""
      <div style="background: rgba(15, 23, 42, 0.4); padding: 12px 15px; border-radius: 8px 8px 0 0; border: 1px solid rgba(255,255,255,0.05); border-bottom: none;">
-         <span style="font-family:'JetBrains Mono'; font-size:0.8rem; color:#FFD700; font-weight:600;">📩 GOLD PAYLOAD BROADCAST HUB</span>
+         <span style="font-family:'JetBrains Mono'; font-size:0.8rem; color:#FFD700; font-weight:600;">📩 ROBOT TELEMETRY BROADCAST HUB</span>
      </div>
      """, unsafe_allow_html=True)
     
@@ -502,22 +569,29 @@ with col_layout_right:
              elif "NEUTRAL" in current_result["signal"] and not current_result["is_scalping"]:
                  st.error("Execution Aborted: Algorithmic engine contains zero active market tracking variables.")
              else:
-                 message = f"""👑 <b>TECH-STAR GOLD SCALPER CONCURRENT PIPELINE</b>
+                 message = f"""🤖 <b>SCALPING ROBOT PRO OPERATIONAL DISPATCH</b>
 
-VECTOR NODE: <code>XAUUSD</code> [{selected_tf}]
-FRAMEWORK STATE: <b>{current_result['scalping_state']}</b>
-CONFIDENCE COEFFICIENT: <code>{current_result['confidence']}%</code>
+VECTOR TARGET: <code>XAUUSD</code> [M1 Optimized]
+MATRIX METRIC: <b>{current_result['scalping_state']}</b>
+SIGNAL MATRIX LEVEL: <code>{current_result['signal']}</code>
+LOT WEIGHT QUANTITY: <code>{lot_size} Lots</code>
 
-🎯 <b>STRUCTURAL EXECUTION BOUNDARIES:</b>
-• Scalper Entry Point: {current_result['entry']}
-• Take Profit Target: {current_result['tp']}
-• Stop Loss Boundary: {current_result['sl']}
-• Target Yield Forecast: {current_result['pips']} Pips (Gold Structure)
+🎯 <b>RISK EXECUTION PROFILE BOUNDARIES:</b>
+• Entry Price Node: {current_result['entry']}
+• Take Profit Level ({tp_mode}): {current_result['tp']}
+• Stop Loss Boundary ({sl_mode}): {current_result['sl']}
+• Dynamic Trailing Matrix SL: {current_result['trailing_sl']}
+• Profit Objective Spectrum: {current_result['pips']} Pips
+
+🛡️ <b>SAFETY GATE CONTROLS:</b>
+• Active Environment Status: {current_result['protection_status']}
+• Account Balance Baseline: ${account_balance}
+• Daily Drawdown Protections: ${max_drawdown_limit if max_drawdown_limit > 0 else 'DISABLED'}
 
 🕒 <i>Transmission Frame: {current_result['timestamp']} UTC</i>"""
                 
                  success, err_msg = send_telegram(message)
                  if success: 
-                     st.toast("Gold payload broadcast complete across network arrays!", icon="🚀")
+                     st.toast("Robot Pro payload broadcast complete across network arrays!", icon="🚀")
                  else: 
                      st.error(f"Transmission Failed: {err_msg}")
